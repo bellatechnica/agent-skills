@@ -103,6 +103,13 @@ usually sorts them into folders by KIND — `handoffs/`, `findings/`,
 there are no folders, the top level is right. `ls` the directory and
 match what is there; a convention nobody follows decays at the speed
 people write, and the writer who has not looked is how it decays.
+(When such a directory is reorganised, sort every skill reference to
+it into POINTERS and DIRECTIVES — only directives matter: a stale
+pointer fails visibly the first time someone follows it, where a stale
+directive naming a flat write path keeps working and re-scatters the
+directory one obedient session at a time. A directive that names a
+folder produces a folder; one that names a flat filename produces a
+flat directory.)
 
 The doc is best-effort context, not a self-sufficient brief. A session
 is not serializable, so polishing toward completeness costs the sender
@@ -112,6 +119,13 @@ or think to ask about, and let the reply channel handle the rest.
 
 - **Spec pointers, not spec**: the committed docs are the spec; list
   exactly which files/sections. The handoff doc holds the breakdown.
+- **Name the committed design documents the work touches — required,
+  every handoff.** List the relevant files under the repo's designs
+  area or state that none apply, and name them as candidates to rule
+  in or out, not assertions ("plausibly relevant, not checked" is
+  honest and useful). The expensive failure this prevents: a receiver
+  recommending something a design forbids in as many words, undetected
+  because the brief looked complete.
 - **Binding vs advisory, as two lists**: which requirements are defects
   if violated, and which are suggestions to override freely on finding
   something better. Undifferentiated, a receiver complies slavishly
@@ -348,3 +362,11 @@ trunk — not merely "the merger accepted"):
 
 Report the cleanup in the recap: what was removed, and anything
 deliberately kept.
+
+## 6. Receiving a routed question
+
+**Rule a routed question OUT of your area before answering it inside
+it.** A receiver who checks whether the question is even theirs, with
+evidence, beats one who answers it well — an item routed as "a
+question about your subsystem" has turned out to be a test defect, and
+establishing that first is what made the fix small and correct.

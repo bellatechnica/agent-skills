@@ -156,6 +156,12 @@ successful rewrite as a failure. Say which ref you scoped to: "clean on
 carried forward and the objects expire" is the honest claim, and it is
 a different claim from "gone".
 
+**A remembered hash identifies nothing after a rewrite.** Re-find
+commits by author date (`git log --since/--until`) or subject
+(`--grep`) — both survive the rewrite; the hash does not, and every
+untracked record citing one (boards, handoff docs, scratch output) is
+dangling until re-anchored this way.
+
 ### 4. Document the negative, not just the positive
 
 For every "0 matches" / "clean" result, state the exact command used

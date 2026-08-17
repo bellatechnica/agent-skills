@@ -93,6 +93,17 @@ character means typed. This signal applies to both Claude Code and Codex.
 **A plain capture without `-e` renders both identically**, which is why
 the flag is not optional.
 
+**One capture answers TWO questions — "may I type here" and "may I
+attribute this" — and the dim marker settles both.** `-e` is required
+whenever a capture is used as EVIDENCE, not only before typing: a plain
+capture renders the grey autofill suggestion byte-identical to text the
+operator submitted, and an invented instruction propagates into durable
+records as provenance. And the suggestion is AIMED, not random — it
+proposes exactly the action the reader was hoping to see, including
+live writes on nobody's authority — so verify hardest when the text
+agrees with you. Whoever runs the may-I-type check will otherwise skip
+the may-I-attribute check; state both, every capture.
+
 An emptiness guard like `grep -cE "[❯›] $"` fails on trailing ANSI codes.
 Over-strict is the safe direction: expect false refusals, and re-inspect
 rather than loosening the pattern blindly.
