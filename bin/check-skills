@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Report skills that are neither shared nor recorded as deliberately private,
+# and check that the agent config directory still reaches this repository.
+#
+# A skill created after the repository was set up is untracked by default, so it
+# stays out of the shared set silently. This is the thing that says so out loud.
+#
+# Exits 1 when an untriaged skill is found, so a hook or CI step can use it.
+
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$repo_root"
+
+private_list="$repo_root/.private-skills"
+untriaged=()
+shared=0
+private=0
+
+for dir in skills/*/; do
+    name=$(basename "$dir")
+    case "$name" in .*) continue ;; esac   # an agent CLI's own system skills
+
+    if [ -n "$(git ls-files -- "$dir")" ]; then
+        shared=$((shared + 1))
+    elif [ -f "$private_list" ] && grep -qxF "$name" "$private_list"; then
+        private=$((private + 1))
+    else
+        untriaged+=("$name")
+    fi
+done
+
+echo "shared: $shared    private: $private    untriaged: ${#untriaged[@]}"
+
+# The symlink is what makes edits here take effect. Check whichever config
+# directories exist; both CLIs are optional.
+for config in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
+    [ -e "$config" ] || continue
+    target=$(readlink -f "$config")
+    if [ "$target" != "$repo_root/skills" ]; then
+        echo "WARNING: $config resolves to $target, not $repo_root/skills"
+    fi
+done
+
+if [ ${#untriaged[@]} -gt 0 ]; then
+    echo
+    echo "Untriaged — each is present locally but shared with nobody:"
+    printf '  %s\n' "${untriaged[@]}"
+    echo
+    echo "Share one:   add '!/skills/<name>/' to .gitignore, then git add skills/<name>"
+    echo "Keep it private: add its name to .private-skills (that file is ignored)"
+    exit 1
+fi

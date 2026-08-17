@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Session Migration"
+  short_description: "Migrate Codex context to a new workspace"
+  default_prompt: "Use $codex-migrate-session to move this Codex session context to a different workspace."

@@ -1,0 +1,49 @@
+# Deny by default, then re-include only the skills that are shared.
+#
+# Two rules make this work, and breaking either one silently breaks the file:
+#
+#  1. Exclude a directory's CONTENTS (`/skills/*`), never the directory itself
+#     (`/skills/`). Git does not descend into an excluded directory, so nothing
+#     beneath one can ever be re-included by a later `!` line.
+#  2. Last matching pattern wins. The hygiene section at the bottom therefore
+#     still applies inside re-included skill directories.
+#
+# `/skills/*` matches direct children only, dotfiles included, so an agent CLI's
+# own system-skill directory stays out without needing its own rule. Everything
+# nested inside a re-included skill is tracked normally.
+#
+# To share a new skill: add one `!/skills/<name>/` line below, keeping the list
+# alphabetical, then `git add skills/<name>`.
+
+/*
+!/.gitignore
+!/README.md
+!/bin/
+!/skills/
+/skills/*
+
+!/skills/codex-migrate-session/
+!/skills/handoff/
+!/skills/history-audit/
+!/skills/init-repo/
+!/skills/never-commit/
+!/skills/plan-upfront/
+!/skills/tmux-message/
+!/skills/token-cost/
+!/skills/wsl-service/
+
+# Hygiene, applied at every depth including inside shared skills. Skills may
+# ship scripts, so build and cache artefacts of their languages belong here.
+__pycache__/
+*.py[cod]
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.claude/worktrees/
+.claude/*.local.*
+CLAUDE.local.md
+.codex/worktrees/
+**/do_not_commit/

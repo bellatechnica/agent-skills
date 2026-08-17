@@ -1,0 +1,4 @@
+interface:
+  display_name: "Token Cost"
+  short_description: "Estimate API cost and Codex usage credits"
+  default_prompt: "Use $token-cost to calculate API-equivalent cost and Codex Fast/Standard usage credits for a specified time window."
