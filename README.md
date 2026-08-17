@@ -30,6 +30,20 @@ directory-level symlink is the reliable form. Symlinking individual skills one
 level down depends on the CLI's discovery walk following symlinks, which is not
 guaranteed.
 
+## Agent Relay
+
+Two skills here depend on a service that does not live in this repository.
+`agent-relay-message` exchanges messages between coding-agent sessions through
+Agent Relay, and `handoff` uses that channel by default, falling back to tmux
+only when asked for it explicitly. Both assume the relay's `agent_relay` tools
+are already configured in the agent CLI as a Model Context Protocol (MCP)
+server, and neither substitutes another channel when they are missing — a
+session without the relay configured will report the gap rather than route
+around it.
+
+The server itself, and the instructions for running it and pointing a CLI at
+it, are in the `agent-relay` repository under the same account as this one.
+
 ## Adding a skill
 
 New skills are private by default: they land in `skills/`, match the deny-all
