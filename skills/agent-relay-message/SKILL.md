@@ -23,8 +23,9 @@ silently substitute tmux messaging when the relay is unavailable.
   the ambiguous outcome and retain the exact content for the user to decide.
 
 The pane-inspection, occupied-composer, bracketed-paste, and empty-composer
-checks in `tmux-message` do not apply to Agent Relay because no keystrokes are
-injected into another session.
+checks in `tmux-message` do not apply to the Relay payload call because it
+injects no keystrokes. They do apply when a handoff sends a conditional tmux
+wake notice.
 
 ## Establish this session's slug
 
@@ -44,6 +45,19 @@ Call `send_message` with the exact `recipient_slug`, this session's
 `acting_slug`, and the user's complete message. Preserve the user's words; do
 not summarize or truncate them. Treat a successful tool result as durable relay
 acceptance, not proof that the recipient processed the message.
+
+Inspect `recipient_waiting_at_send` in every successful `send_message` or
+`reply_to_message` result. `true` means the relay observed an active recipient
+MCP wait when it notified the recipient; it does not prove processing or later
+listener replacement. `false` means the message is durable but no MCP wait was
+observed. Outside a handoff with a known tmux recovery address, report the false
+observation without inventing another delivery channel.
+
+In a Relay-based handoff, follow the `handoff` skill's conditional wake rule. A
+false observation permits one `tmux-message` wake notice containing the Relay
+message ID and an instruction to process the Relay inbox and restore exactly
+one listener. Never copy the actionable payload into that notice. A true
+observation permits no tmux notice.
 
 ## Read and acknowledge
 
@@ -70,8 +84,19 @@ Then keep exactly one background listener for this slug:
 5. Start one replacement listener after all returned messages are handled.
 
 Do not start a second listener while one is active. Do not poll `read_inbox` or
-repeat short waits; the MCP wait remains blocked until a message arrives. A
-listener reports durable delivery, not completed processing.
+repeat short waits; the MCP wait remains blocked until a message arrives or the
+configured client deadline expires. A listener reports durable delivery, not
+completed processing.
+
+Configure Codex's `agent_relay` MCP server with
+`tool_timeout_sec = 86400`. If an unchanged Codex wait reaches that 24-hour
+client deadline, report the failed operation, caller slug, and timeout, then
+start exactly one replacement listener. Do not acknowledge anything because a
+timeout delivers no message. A message committed between cancellation and
+replacement remains pending and returns when the replacement wait begins. This
+once-per-day replacement is recovery from the configured client deadline, not
+short-wait polling; any other repeated failure requires diagnosis instead of a
+retry loop.
 
 Use the control behavior supported by the current client:
 
@@ -98,5 +123,8 @@ Otherwise use the Codex active-parent pattern. At prompt start and before
 reporting completion, read the inbox if listener state is absent or uncertain.
 
 If a relay call fails, report the operation, caller slug, recipient slug when
-applicable, and the returned error. Do not claim delivery and do not switch to
-tmux unless the user explicitly requests tmux mode.
+applicable, and the returned error. Do not claim delivery. An ambiguous send
+failure permits neither a tmux payload resend nor a conditional wake notice
+because no authoritative `recipient_waiting_at_send` result was returned. A
+preflight failure may select the `handoff` skill's announced tmux fallback; an
+ordinary Relay operation does not switch channels silently.

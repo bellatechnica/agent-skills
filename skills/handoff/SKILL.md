@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Hand off a work item to a new parallel agent session, using Agent Relay by default for inter-session communication and tmux messaging only when the user explicitly requests tmux mode. Default to the same assistant CLI unless the user specifies another. Use a prompt for simple tasks, a handoff doc in a do_not_commit area for complex ones, an isolated worktree for file edits, and coordination constraints when shared resources demand them.
+description: Hand off a work item to a new parallel agent session, using Agent Relay as the default durable channel, tmux as an announced preflight fallback, and a tmux wake notice only when Relay reports no active recipient listener. Default to the same assistant CLI unless the user specifies another. Use a prompt for simple tasks, a handoff doc in a do_not_commit area for complex ones, an isolated worktree for file edits, and coordination constraints when shared resources demand them.
 ---
 
 # Hand off work to a parallel session
@@ -19,18 +19,26 @@ instead of silently substituting another agent.
 
 Choose the communication channel before sizing the handoff:
 
-- **Agent Relay is the default and exclusive channel.** Confirm that the
+- **Agent Relay is the default durable channel.** Confirm that the
   configured `agent_relay` MCP server answers a live tool call. Choose distinct,
   human-readable slugs for this session and the new session, then call
   `register_session` for this session before launch. Re-registration is safe.
   Invoke the `agent-relay-message` skill and ensure this session has one listener
-  after the launch; two-way communication requires both sessions to receive.
-  If registration or connectivity fails, report the blocker and ask the user;
-  never fall back to tmux silently.
-- **Tmux messaging is opt-in.** Use `tmux-message` only when the user explicitly
-  requests tmux mode. Tmux may still host the new local agent window when Agent
-  Relay carries its messages; using tmux as a process host does not select tmux
-  messaging.
+  after the launch; two-way communication requires both sessions to receive. For
+  every successful send or reply, inspect `recipient_waiting_at_send`. A true
+  result uses Relay alone. A false result leaves the payload in Relay and permits
+  one `tmux-message` wake notice containing only the Relay message ID and an
+  instruction to process the inbox and restore exactly one listener. If no tmux
+  path reaches the recipient, report that the message is queued but active
+  wake-up is unverified. Never resend the payload after an ambiguous Relay
+  result.
+- **Full tmux messaging is explicit or an announced preflight fallback.** Use it
+  when the user requests tmux mode. Also use it when Relay registration or its
+  live preflight fails before launch and both sessions are reachable through the
+  same tmux server; report the fallback to the user and give both sessions their
+  pane addresses. If tmux is unavailable too, report the blocker. Tmux may still
+  host a local agent window while Relay carries its payloads; process hosting
+  alone does not select tmux messaging.
 
 ## 0. Size the handoff first
 
@@ -144,8 +152,9 @@ or think to ask about, and let the reply channel handle the rest.
   condition (e.g. "no model_calls newer than 15 min", "status file
   updated"), and what is safe immediately (typically: code + offline
   tests on an isolated test database; own worktree). The section must
-  also name the coordination channel: both Agent Relay slugs by default,
-  or the spawning session's tmux pane address in explicit tmux mode.
+  also name the coordination channel: both Agent Relay slugs by default, plus
+  both recovery pane addresses when the sessions share a tmux server; or the
+  spawning session's tmux pane address in full tmux mode.
   Fully independent work needs no coordination section — do not invent
   wait conditions.
 - **The rest by handoff type.** IMPLEMENTATION: steps with known traps
@@ -232,18 +241,26 @@ or think to ask about, and let the reply channel handle the rest.
 - Say in the prompt that ownership runs past the merge: once the branch
   lands, the session cleans up its own worktree, branch and scratch
   databases (section 5) unless the user has noted further work on it.
-- Give the new session its Agent Relay slug and this session's slug. Include
-  this instruction in the initial prompt, substituting the actual values:
+- When Relay is selected, give the new session its Agent Relay slug and this
+  session's slug. Include this instruction in the initial prompt, substituting
+  the actual values:
 
-      Use Agent Relay for every inter-session message. Register with slug
-      <child-slug> and agent kind <kind>. The spawning session's slug is
+      Use Agent Relay as the durable source for every actionable inter-session
+      message. Register with slug <child-slug> and agent kind <kind>. The
+      spawning session's slug is
       <parent-slug>. Use the agent-relay-message skill. Read every pending
       message now, then maintain exactly one background listener using
       wait_for_messages. Acknowledge a message only after processing it. Use
       reply_to_message for responses, and send blockers, clarification requests,
       and completion notices to <parent-slug>. Replace the listener after
-      handling its complete result. Do not switch to tmux messaging unless the
-      user explicitly requests tmux mode.
+      handling its complete result. After every successful send or reply, inspect
+      recipient_waiting_at_send. If true, use no tmux message. If false, invoke
+      tmux-message and send <recipient-pane> only a wake notice containing the
+      Relay message ID and an instruction to process the Relay inbox and restore
+      exactly one listener; never copy the actionable payload into the notice.
+      The recovery pane addresses are <parent-pane> and <child-pane>. If a pane
+      is unreachable, report that Relay queued the message but active wake-up is
+      unverified. Never resend through tmux after an ambiguous Relay result.
 
   Append the listener rule for the selected child client to that initial prompt:
 
@@ -261,15 +278,17 @@ or think to ask about, and let the reply channel handle the rest.
     only when the running client starts a parent turn on background completion;
     otherwise keep the parent waiting as described for Codex.
 
-  After launching the child, apply the matching rule to this spawning session's
-  own listener. The initial user-facing handoff report is a commentary update
-  when the current client must keep its turn active; do not end the turn and
-  strand the listener merely to produce a final response.
-- In explicit tmux mode only, give the new session a reply address from
-  `tmux display-message -p -t "$TMUX_PANE" '#S:#I.#P'`. Delivery mechanics —
-  addressing, inspecting the pane before typing, sending, backing off when the
-  line is occupied, and verifying — are the `tmux-message` skill; invoke it
-  before the first send and tell the spawned session to do the same.
+  In Relay mode, after launching the child, apply the matching listener and
+  conditional-wake rules to this spawning session. The initial user-facing
+  handoff report is a commentary update when the current client must keep its
+  turn active; do not end the turn and strand the listener merely to produce a
+  final response.
+- Resolve this session's pane with
+  `tmux display-message -p -t "$TMUX_PANE" '#S:#I.#P'` and the child's pane by
+  stable window name. In Relay mode these are recovery addresses only. In
+  explicit or fallback full-tmux mode they are reply addresses. Every actual
+  tmux delivery follows `tmux-message`: invoke it before the first send and tell
+  the spawned session to do the same.
 - Coordination is two-way in either mode: the spawned session reports when it
   reaches a blocked step or is ready, and the spawning session sends the signal
   as soon as the blocking condition clears. Also update any durable signal
