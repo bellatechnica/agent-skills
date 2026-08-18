@@ -22,7 +22,6 @@
 !/skills/
 /skills/*
 
-!/skills/agent-relay-message/
 !/skills/codex-migrate-session/
 !/skills/handoff/
 !/skills/history-audit/
