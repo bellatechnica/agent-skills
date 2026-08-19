@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Hand off a work item to a new parallel agent session, using Agent Relay as the default durable channel, tmux as an announced preflight fallback, and a tmux wake notice only when Relay reports no active recipient listener. Default to the same assistant CLI unless the user specifies another. Use a prompt for simple tasks, a handoff doc in a do_not_commit area for complex ones, an isolated worktree for file edits, and coordination constraints when shared resources demand them.
+description: Hand off a work item to a new parallel agent session, using Agent Relay as the default durable channel, tmux as an announced preflight fallback, and a tmux wake notice only when Relay reports no active recipient listener. Default to the same assistant CLI unless the user specifies another, and launch Claude Code through claude-sbx when Docker Sandbox or a settings profile is requested. Use a prompt for simple tasks, a handoff doc in a do_not_commit area for complex ones, an isolated worktree for file edits, and coordination constraints when shared resources demand them.
 ---
 
 # Hand off work to a parallel session
@@ -179,7 +179,9 @@ or think to ask about, and let the reply channel handle the rest.
   session falls back to a saved default, which can drift as the user
   switches models. Deviate only deliberately — a genuinely mechanical
   task on a cheaper model, or a model the user named — and say so in the
-  prompt so the session knows it was chosen, not inherited.
+  prompt so the session knows it was chosen, not inherited. For
+  `claude-sbx`, the required profile is the explicit model/provider choice;
+  do not add `--model` unless the user asks to override that profile.
 - **Give the agent session a stable name for later resume.** For Codex,
   send `/rename <window-slug>` once the session is up; revive it with
   `codex resume <window-slug>`. For Claude Code, mint a UUID with
@@ -198,9 +200,35 @@ or think to ask about, and let the reply channel handle the rest.
       # Claude Code (when this skill runs there or the user requests it)
       claude --session-id <uuid> --model <model> "<prompt>"
 
+      # Claude Code in Docker Sandbox
+      claude-sbx <profile> --session-id <uuid> "<prompt>"
+
   Other explicitly requested assistants use their equivalent workspace,
   model, initial-prompt, naming, and resume options. Do not weaken their
   normal sandbox or approval policy just to make the handoff unattended.
+- For `claude-sbx`, launch from the repo root just as for a direct Claude
+  session. The same repo root and profile reuse one Docker sandbox and start
+  another Claude process there; this is expected. Give every process a unique
+  tmux window name, Claude UUID, and Relay slug even when the profile repeats.
+  Different profiles select different sandboxes.
+
+  The ordinary worktree rule is unchanged. Read-only sessions may share the
+  repo root. Every session that will edit files creates its OWN new worktree
+  after launch and moves into it before the first edit; two Claude processes in
+  one container do not share an editing worktree. Do not launch `claude-sbx`
+  from a host linked worktree: Docker mounts that directory without the parent
+  repository's Git metadata, so the sandboxed process cannot use Git there.
+
+  The launcher supplies the curated skills and `agent_relay` MCP configuration,
+  so do not run `claude mcp add`. Record the profile with the session UUID:
+
+      <date> claude-sbx <profile> <window-slug> <uuid>
+
+  Resume from the same repo root with
+  `claude-sbx <profile> --resume <uuid>`. Sandbox stop/start preserves the
+  shared VM state; sandbox removal or reset destroys every stored Claude
+  session in it. Do not remove a reused sandbox until every session using that
+  repo/profile pair has finished.
 - With a handoff doc and file edits, make the prompt say "create your
   OWN NEW worktree", and name the branch to base it on; "based on main"
   alone is what gets misread as "inside the worktree called main":
@@ -338,11 +366,12 @@ details, the numbers, the half-made decisions all survive in it.
 
 - Resume with the same agent that owns the session. For Codex, use
   `codex resume <window-slug>`. For Claude Code, find the UUID in
-  `docs/do_not_commit/handoff-sessions.log` and use
-  `claude --resume <uuid>`. For older unnamed sessions, use that
-  agent's resume picker and match the first user message against the
-  spawn prompt; keyword grep is too noisy because many sessions mention
-  the same docs.
+  `docs/do_not_commit/handoff-sessions.log`. Use `claude --resume <uuid>`
+  for a direct session, or use
+  `claude-sbx <recorded-profile> --resume <uuid>` from the same repo root
+  for a sandboxed session. For older unnamed sessions, use that agent's
+  resume picker and match the first user message against the spawn prompt;
+  keyword grep is too noisy because many sessions mention the same docs.
 - Send a SHORT catch-up as the next message: only what changed since it
   closed (how far main moved, what landed that overlaps, what to do
   now). It needs the delta, not a reconstruction.
