@@ -40,9 +40,18 @@ CLAUDE.local.md
 # Codex
 .codex/worktrees/
 
+# Machine-local values and secrets
+.env
+*.local
+
 # Project-specific
 **/do_not_commit/
 ```
+
+Keep the secrets rule exactly this narrow. `.env*` would also match the
+`.envrc` that step 4 creates and commits, and `*.local` matches only names
+ending in `.local` — the `name.local.ext` shape is what the two Claude Code
+rules above cover.
 
 Then add sections only for the project's actual languages. For Python:
 
