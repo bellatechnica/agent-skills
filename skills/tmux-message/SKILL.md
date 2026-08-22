@@ -110,11 +110,19 @@ rather than loosening the pattern blindly.
 
 ## 3. Send
 
-    tmux set-buffer -b <unique-buffer> -- '<the whole message>'
+For a multiline message, an exact payload, or any message containing shell
+quotes, first create a uniquely named file under `/tmp` with `apply_patch`.
+The file contains the message itself, with its real LF characters. Do not
+generate that file with shell `echo`, `printf`, a here-document, or a serialized
+string. Then load it before pasting:
+
+    tmux load-buffer -b <unique-buffer> /tmp/<unique-message-file>
     tmux paste-buffer -prd -b <unique-buffer> -t <address>
     sleep 0.05
     tmux send-keys -t <address> Enter
 
+- Remove the exact temporary file after delivery; never use a glob or a shared
+  path for this.
 - Use a buffer name unique to this sender and delivery. `-d` deletes it
   after pasting, so it does not accumulate or collide with a later send.
 - `paste-buffer -p` wraps the content in bracketed-paste control codes
@@ -124,10 +132,13 @@ rather than loosening the pattern blindly.
   and leaving `[Pasted Content ...]` or raw text in the composer.
 - The short delay gives the TUI time to finish handling the explicit paste
   before submission. It is not a substitute for verification.
-- The shell example uses single quotes. **No apostrophes in the message** —
-  they end the shell quote. Rewrite around them ("do not" for "don't",
-  "someone's" becomes "of someone"), or use an equivalently safe exact
-  quoting method.
+- A simple one-line message containing no shell quote may still use
+  `tmux set-buffer -b <unique-buffer> -- '<message>'`. Do not rewrite message
+  text to make shell quoting easier; use the file path above instead.
+- Never concatenate `JSON.stringify(payload)` or another serialized string
+  into a shell command that calls `tmux set-buffer`. JSON represents LF as the
+  two characters `\n`, and POSIX double quotes do not decode that pair. The
+  recipient then receives literal backslash-n text rather than line breaks.
 - Enter goes in a **separate tmux call**. One message, one Enter.
 - Do not fall back to one or more `send-keys -l` calls for message text.
   Splitting text makes Codex's burst behavior worse; even one large call
