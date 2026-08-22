@@ -32,17 +32,17 @@ guaranteed.
 
 ## Agent Relay
 
-Two skills here depend on a service that does not live in this repository.
-`agent-relay-message` exchanges messages between coding-agent sessions through
-Agent Relay, and `handoff` uses that channel by default, falling back to tmux
-only when asked for it explicitly. Both assume the relay's `agent_relay` tools
-are already configured in the agent CLI as a Model Context Protocol (MCP)
-server, and neither substitutes another channel when they are missing — a
-session without the relay configured will report the gap rather than route
-around it.
+`handoff` uses Agent Relay as its default durable channel for messages between
+coding-agent sessions. It assumes the relay's `agent_relay` tools are configured
+in the agent CLI as a Model Context Protocol (MCP) server, and confirms that
+with a live tool call before each handoff. When that preflight fails, it
+announces a fallback to tmux messaging rather than failing silently; if tmux
+cannot reach the other session either, it reports the blocker.
 
-The server itself, and the instructions for running it and pointing a CLI at
-it, are in the `agent-relay` repository under the same account as this one.
+The server, the `agent-relay-message` skill that drives it, and the instructions
+for running both, are in the `agent-relay` repository under the same account as
+this one. Install that skill alongside the MCP server — `handoff` delegates the
+listener protocol to it.
 
 ## Adding a skill
 
