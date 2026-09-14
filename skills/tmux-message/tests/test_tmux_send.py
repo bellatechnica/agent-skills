@@ -298,6 +298,23 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual(delays, list(tmux_send.VERIFY_DELAYS_SECONDS))
 
 
+class PreflightTests(unittest.TestCase):
+    def test_line_that_would_wrap_is_unobservable(self) -> None:
+        self.assertIn(
+            "wrap",
+            tmux_send._unobservable_reason("x" * (WIDTH - 1), pane()),
+        )
+
+    def test_trailing_space_is_unobservable(self) -> None:
+        self.assertIn("space", tmux_send._unobservable_reason("message ", pane()))
+
+    def test_terminal_control_is_unobservable(self) -> None:
+        self.assertIn("control", tmux_send._unobservable_reason("a\tb", pane()))
+
+    def test_fitting_unicode_line_is_observable(self) -> None:
+        self.assertEqual(tmux_send._unobservable_reason("plain café", pane()), "")
+
+
 class OutputContractTests(unittest.TestCase):
     @staticmethod
     def message_path(text: str = "message\n") -> mock.Mock:
@@ -349,28 +366,19 @@ class OutputContractTests(unittest.TestCase):
         self.assertEqual(send_keys[0].args[-1], "Enter")
         self.assertEqual(send_keys[0].args[-2], "%7")
 
-    def test_message_newline_bytes_are_not_translated(self) -> None:
+    def test_crlf_is_refused_as_unobservable_without_tmux_mutation(self) -> None:
         message = "first\r\nsecond\r"
         stdout = io.StringIO()
-        okay = self.completed()
         with (
             mock.patch.object(tmux_send, "resolve_target", return_value=(pane(), "", "")),
             mock.patch.object(tmux_send, "capture_target", return_value=result("CLEAR")),
-            mock.patch.object(
-                tmux_send,
-                "_wait_for_owned_message",
-                return_value=owned(message),
-            ),
-            mock.patch.object(tmux_send, "_wait_for_clear", return_value=result("CLEAR")),
-            mock.patch.object(tmux_send, "_tmux", return_value=okay) as tmux_call,
+            mock.patch.object(tmux_send, "_tmux") as tmux_call,
             contextlib.redirect_stdout(stdout),
             contextlib.redirect_stderr(io.StringIO()),
         ):
             code = tmux_send.send_message("s:w.0", self.message_path(message))
-        load = [call for call in tmux_call.call_args_list if call.args[0] == "load-buffer"]
-        self.assertEqual(code, 0)
-        self.assertEqual(len(load), 1)
-        self.assertEqual(load[0].kwargs["input_text"], message)
+        self.assertEqual((code, stdout.getvalue()), (3, "UNKNOWN unobservable\n"))
+        tmux_call.assert_not_called()
 
     def test_occupied_is_non_idempotent_refusal(self) -> None:
         code, stdout, stderr, tmux_call = self.invoke(initial=owned("draft"))
@@ -391,6 +399,24 @@ class OutputContractTests(unittest.TestCase):
         self.assertEqual((code, stdout), (3, "UNKNOWN layout\n"))
         self.assertIn("pane shape", stderr)
         self.assertEqual(tmux_call.call_count, 0)
+
+    def test_unobservable_message_refuses_before_buffer_or_paste(self) -> None:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(tmux_send, "resolve_target", return_value=(pane(), "", "")),
+            mock.patch.object(tmux_send, "capture_target", return_value=result("CLEAR")),
+            mock.patch.object(tmux_send, "_tmux") as tmux_call,
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(stderr),
+        ):
+            code = tmux_send.send_message(
+                "s:w.0",
+                self.message_path("x" * WIDTH),
+            )
+        self.assertEqual((code, stdout.getvalue()), (3, "UNKNOWN unobservable\n"))
+        self.assertIn("wrap", stderr.getvalue())
+        tmux_call.assert_not_called()
 
     def test_server_and_target_unknown_name_class(self) -> None:
         for kind in ("server", "target"):
@@ -548,6 +574,18 @@ class OutputContractTests(unittest.TestCase):
             code = tmux_send.main([])
         self.assertEqual(code, 64)
         self.assertIn("usage error", stderr.getvalue())
+
+    def test_help_does_not_reuse_sent_exit_code(self) -> None:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = tmux_send.main(["--help"])
+        self.assertEqual(code, 64)
+        self.assertNotIn("SENT", stdout.getvalue())
+
+    def test_signal_after_outcome_decision_is_ignored(self) -> None:
+        tmux_send._OUTCOME_DECIDED = True
+        tmux_send._raise_signal(15, None)
 
     def test_missing_tmux_executable_becomes_server_unknown(self) -> None:
         with mock.patch.object(

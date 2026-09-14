@@ -48,8 +48,8 @@ Resolve the script path relative to this `SKILL.md`, then run:
 
     python3 <tmux-message-skill>/scripts/tmux_send.py <target> /tmp/<message-file>
 
-The first stdout word is the stable result. Some failures add a stable class or
-stage after it:
+The stdout line is the stable result token and is written only after the outcome
+is decided. Some failures add a stable class or stage after it:
 
 - `SENT`, exit `0`: the script observed the complete pasted message twice,
   issued one Enter, and then observed that composer clear.
@@ -60,13 +60,19 @@ stage after it:
   - `server`: tmux or its socket could not be reached;
   - `target`: tmux answered, but the requested or pinned pane did not;
   - `layout`: the pane was captured, but its shape was not recognized;
+  - `unobservable`: the message cannot be reconstructed exactly in this pane;
   - `buffer`: tmux could not prepare the exact message buffer;
   - `interrupted` or `internal`: execution stopped before paste was issued.
 - `DELIVERY_UNVERIFIED <stage>`, exit `4`: at least one paste or key command may
-  have reached the pane, but the result is uncertain. Stages include
+  have reached the pane, but the result is uncertain. Stages are exactly
   `paste-failed`, `paste-not-observed`, `enter-failed`, `not-cleared`,
   `interrupted-before-enter`, `interrupted-after-enter`, and `internal-error`.
 - Exit `64`: invalid arguments or message file; nothing was sent.
+
+Exit `0` is reserved for `SENT`; `--help` is an invocation result and exits 64.
+The token and exit status must agree. A missing token, multiple tokens, or any
+token/status disagreement is treated as `DELIVERY_UNVERIFIED` unless the only
+output is the documented exit-64 invocation error before a target was resolved.
 
 The script never prints its pane capture, composer text, or transcript. Stderr
 contains the target, pinned pane where available, socket, state explanation, and
@@ -81,16 +87,29 @@ result. Never clean message files with a glob.
 
 Do not inspect-and-retry an ordinary message, even when inspection is generally
 allowed. The composer might hold an earlier copy whose submission would make a
-later retry a duplicate. Do not press Enter, paste, clear, or poll until it
-changes. Retain the message file and postpone or escalate the delivery.
+later retry a duplicate. Do not press Enter, paste, clear, or poll for a change.
+Retain the message file and postpone or escalate the delivery. A later normal
+invocation is permitted at the caller's next natural work turn or after an
+external notification, but only when no earlier attempt of that same retained
+message returned `DELIVERY_UNVERIFIED` or produced no token. This is not a
+timer-driven retry loop.
 
-One caller-side exception exists for an interruption the caller itself observed
-after paste began and before Enter was issued. Unless inspection was separately
-disallowed, that caller may inspect read-only and decide whether the entire
-non-dim composer is exactly its retained message. The script records no attempts
-and performs no recovery. If complete ownership is not evident, send no key.
+One caller-side exception exists only after a new invocation returns `OCCUPIED`
+and that caller's immediately preceding attempt of the same retained message
+returned `DELIVERY_UNVERIFIED interrupted-before-enter`. A no-token run does not
+qualify because the caller cannot know whether Enter was issued. Unless
+inspection was separately disallowed, the caller may resolve the reported pane
+to the same `%pane_id`, inspect it read-only twice, and judge whether the entire
+non-dim composer is exactly the retained message. If it is, the permitted action
+is exactly one `tmux send-keys -t <reported-%pane_id> Enter`; do not paste or
+rerun the sender. Observe the pane afterwards, but do not relabel the script's
+earlier result as `SENT`. If complete ownership is not evident, send no key. The
+script records no attempts and performs no recovery.
+
 `DELIVERY_UNVERIFIED interrupted-after-enter` never qualifies because the first
-Enter may still be pending.
+Enter may still be pending. The interrupted-send exception deliberately leaves
+the final judgment and the capture-to-Enter race with the caller; it must not be
+used when that tradeoff is unacceptable.
 
 The `agent-relay-message` skill defines a separate caller-side exception for an
 already occupied, complete Relay wake notice. Wake notices are idempotent; normal
@@ -110,6 +129,8 @@ make delivery possible.
   absent, escalate rather than guessing another pane.
 - `UNKNOWN layout`: retain the message and wait for a recognized composer. Do
   not loosen the classifier from one unfamiliar capture.
+- `UNKNOWN unobservable`: nothing was pasted. Use Agent Relay or a durable file
+  reference rather than changing or truncating the retained message.
 - `UNKNOWN buffer`, `UNKNOWN interrupted`, or `UNKNOWN internal`: fix or report
   the stated local failure before retrying.
 
@@ -134,7 +155,8 @@ payload but active wake-up is unverified. Do not resend the Relay payload.
 
 A run that produces none of the documented stdout results—because of SIGKILL, a
 host crash, or a caller-side timeout—is treated as
-`DELIVERY_UNVERIFIED`. A timeout wrapper must allow longer than the two
+`DELIVERY_UNVERIFIED` and never qualifies for the interrupted-send Enter
+exception. A timeout wrapper must allow longer than the two
 3.15-second verification windows plus tmux command time.
 
 ## Classifier and verification contract
@@ -165,6 +187,14 @@ A logical line ending in spaces is therefore not verifiable and receives no
 Enter. Equality must hold in two consecutive captures. Soft-wrapped, collapsed,
 or otherwise unreconstructable messages produce
 `DELIVERY_UNVERIFIED paste-not-observed` and receive no Enter.
+
+Before loading a tmux buffer, the script refuses as `UNKNOWN unobservable` when
+a logical line contains a terminal control character, ends in a display space,
+or is wider than the pane after the two-column prompt prefix. These conditions
+predict lossy reconstruction without a per-client size cap. A client may still
+collapse a large or multiline bracketed paste into an opaque placeholder; no
+approved collapse threshold exists, so that case remains
+`DELIVERY_UNVERIFIED paste-not-observed` and may strand text in the composer.
 
 After one Enter, the script polls on the approved exponential schedule of 50,
 100, 200, 400, 800, and 1600 ms. `SENT` requires the previously observed owned

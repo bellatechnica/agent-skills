@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 import time
+import unicodedata
 import uuid
 
 
@@ -29,6 +30,9 @@ EXIT_DELIVERY_UNVERIFIED = 4
 EXIT_USAGE = 64
 
 VERIFY_DELAYS_SECONDS = (0.05, 0.1, 0.2, 0.4, 0.8, 1.6)
+PROMPT_COLUMNS = 2
+
+_OUTCOME_DECIDED = False
 
 CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 OSC_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)")
@@ -57,6 +61,9 @@ class SignalInterruption(Exception):
 class Parser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
         raise UsageError(message)
+
+    def exit(self, status: int = 0, message: str | None = None) -> None:
+        raise UsageError(message.strip() if message else "help requested")
 
 
 @dataclass(frozen=True)
@@ -329,6 +336,31 @@ def _server_hint() -> str:
     return tmux_environment.split(",", 1)[0] or "default"
 
 
+def _display_width(text: str) -> int | None:
+    width = 0
+    for character in text:
+        category = unicodedata.category(character)
+        if category.startswith("C"):
+            return None
+        if unicodedata.combining(character):
+            continue
+        width += 2 if unicodedata.east_asian_width(character) in {"W", "F", "A"} else 1
+    return width
+
+
+def _unobservable_reason(message: str, pane: PaneIdentity) -> str:
+    available_columns = pane.pane_width - PROMPT_COLUMNS
+    for line in message.split("\n"):
+        if line.endswith(" "):
+            return "a logical line ends in an indistinguishable display space"
+        width = _display_width(line)
+        if width is None:
+            return "a logical line contains a terminal control character"
+        if width > available_columns:
+            return "a logical line would wrap in the current pane"
+    return ""
+
+
 def resolve_target(target: str) -> tuple[PaneIdentity | None, str, str]:
     server = _tmux("list-sessions", "-F", "#{pid}\t#{socket_path}")
     if server.returncode != 0:
@@ -467,24 +499,25 @@ def _emit_unknown(
     detail: str,
     socket_path: str | None = None,
 ) -> int:
-    print(f"{UNKNOWN} {kind}")
+    _begin_outcome()
     socket = socket_path or _server_hint()
     explanations = {
         "server": "tmux server or socket could not be reached",
         "target": "tmux answered, but the target pane could not be resolved",
         "layout": "pane shape is not recognized",
+        "unobservable": "message cannot be reconstructed exactly in this pane",
         "buffer": "tmux could not prepare the message buffer",
         "interrupted": "the sender was interrupted before paste was issued",
         "internal": "the sender failed before paste was issued",
     }
     explanation = explanations.get(kind, "the sender could not proceed safely")
-    suffix = f"; tmux reported: {detail}" if detail else ""
+    suffix = f"; detail: {detail}" if detail else ""
     print(
         f"{UNKNOWN} {kind}: {explanation}; nothing sent "
         f"(target {target}; socket {socket}){suffix}",
         file=sys.stderr,
     )
-    return EXIT_UNKNOWN
+    return _emit_token(f"{UNKNOWN} {kind}", EXIT_UNKNOWN)
 
 
 def _emit_unverified(
@@ -493,8 +526,8 @@ def _emit_unverified(
     target: str,
     detail: str = "",
 ) -> int:
-    print(f"{DELIVERY_UNVERIFIED} {stage}")
-    suffix = f"; tmux reported: {detail}" if detail else ""
+    _begin_outcome()
+    suffix = f"; detail: {detail}" if detail else ""
     if pane is None:
         identity = f"target {target}; socket {_server_hint()}"
     else:
@@ -504,10 +537,25 @@ def _emit_unverified(
         f"automatically ({identity}){suffix}",
         file=sys.stderr,
     )
-    return EXIT_DELIVERY_UNVERIFIED
+    return _emit_token(
+        f"{DELIVERY_UNVERIFIED} {stage}", EXIT_DELIVERY_UNVERIFIED
+    )
+
+
+def _emit_token(token: str, exit_code: int) -> int:
+    _begin_outcome()
+    print(token, flush=True)
+    return exit_code
+
+
+def _begin_outcome() -> None:
+    global _OUTCOME_DECIDED
+    _OUTCOME_DECIDED = True
 
 
 def send_message(target: str, message_file: Path) -> int:
+    global _OUTCOME_DECIDED
+    _OUTCOME_DECIDED = False
     pane: PaneIdentity | None = None
     buffer_name: str | None = None
     paste_issued = False
@@ -528,27 +576,36 @@ def send_message(target: str, message_file: Path) -> int:
 
         initial = capture_target(pane)
         if initial.state == OCCUPIED:
-            print(OCCUPIED)
+            _begin_outcome()
             print(
                 f"{OCCUPIED}: target composer contains unsubmitted text; nothing sent. "
                 "Messages are not assumed idempotent: do not inspect-and-retry an "
                 f"ordinary message (target {target}; pane {pane.pane_id})",
                 file=sys.stderr,
             )
-            return EXIT_OCCUPIED
+            return _emit_token(OCCUPIED, EXIT_OCCUPIED)
         if initial.state == DIALOG:
-            print(DIALOG)
+            _begin_outcome()
             print(
                 f"{DIALOG}: target pane is showing a dialog; nothing sent "
                 f"(target {target}; pane {pane.pane_id})",
                 file=sys.stderr,
             )
-            return EXIT_DIALOG
+            return _emit_token(DIALOG, EXIT_DIALOG)
         if initial.state == UNKNOWN:
             return _emit_unknown(
                 initial.detail_class or "layout",
                 target,
                 initial.detail,
+                pane.socket_path,
+            )
+
+        unobservable = _unobservable_reason(message, pane)
+        if unobservable:
+            return _emit_unknown(
+                "unobservable",
+                target,
+                unobservable,
                 pane.socket_path,
             )
 
@@ -588,8 +645,7 @@ def send_message(target: str, message_file: Path) -> int:
         cleared = _wait_for_clear(pane)
         if cleared.state != CLEAR:
             return _emit_unverified("not-cleared", pane, target, cleared.detail)
-        print(SENT)
-        return 0
+        return _emit_token(SENT, 0)
     except UsageError:
         raise
     except (KeyboardInterrupt, SignalInterruption) as error:
@@ -617,6 +673,8 @@ def _parser() -> Parser:
 
 
 def _raise_signal(signal_number: int, _frame: object) -> None:
+    if _OUTCOME_DECIDED:
+        return
     raise SignalInterruption(signal_number)
 
 
