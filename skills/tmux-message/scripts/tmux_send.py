@@ -642,8 +642,9 @@ def send_message(
             _begin_outcome()
             print(
                 f"{OCCUPIED}: target composer contains unsubmitted text; nothing sent. "
-                "Messages are not assumed idempotent: do not inspect-and-retry an "
-                f"ordinary message (target {target}; pane {pane.pane_id})",
+                "Messages are not assumed idempotent: do not directly inspect "
+                "and then retry an ordinary message "
+                f"(target {target}; pane {pane.pane_id})",
                 file=sys.stderr,
             )
             return _emit_token(OCCUPIED, EXIT_OCCUPIED)

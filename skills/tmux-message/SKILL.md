@@ -107,6 +107,14 @@ The script never prints its pane capture, composer text, or transcript. Stderr
 contains the target, pinned pane where available, socket, state explanation, and
 tmux's own error text.
 
+Direct inspection means the caller itself reading pane or tmux state outside the
+sender scripts, such as its own `tmux capture-pane` or a tmux listing. It is
+allowed read-only by default and forbidden only when a separate instruction
+explicitly disallows direct inspection. The captures and pane enumeration that
+`tmux_send.py` and the Relay wake helper perform internally are part of sending,
+print no pane content, and are not direct inspection; an instruction disallowing
+direct inspection does not restrict them.
+
 Remove a message file only after `SENT`. Retain it after every other result.
 For stdin, retain the exact reproducible source instead. Never clean message
 files with a glob.
@@ -115,26 +123,26 @@ files with a glob.
 
 ### `OCCUPIED`
 
-Do not inspect-and-retry an ordinary message, even when inspection is generally
-allowed. The composer might hold an earlier copy whose submission would make a
-later retry a duplicate. Do not press Enter, paste, clear, or poll for a change.
-Retain the message file and postpone or escalate the delivery. A later normal
-invocation is permitted at the caller's next natural work turn or after an
-external notification, but only when no earlier attempt of that same retained
-message returned `DELIVERY_UNVERIFIED` or produced no token. This is not a
-timer-driven retry loop.
+Do not directly inspect and then retry an ordinary message, even when direct
+inspection is allowed. The composer might hold an earlier copy whose submission
+would make a later retry a duplicate. Do not press Enter, paste, clear, or poll
+for a change. Retain the message file and postpone or escalate the delivery. A
+later normal invocation is permitted at the caller's next natural work turn or
+after an external notification, but only when no earlier attempt of that same
+retained message returned `DELIVERY_UNVERIFIED` or produced no token. This is
+not a timer-driven retry loop.
 
 One caller-side exception exists only after a new invocation returns `OCCUPIED`
 and that caller's immediately preceding attempt of the same retained message
 returned `DELIVERY_UNVERIFIED interrupted-before-enter`. A no-token run does not
-qualify because the caller cannot know whether Enter was issued. Unless
+qualify because the caller cannot know whether Enter was issued. Unless direct
 inspection was separately disallowed, the caller may resolve the reported pane
-to the same `%pane_id`, inspect it read-only, and judge whether the entire
-non-dim composer is exactly the retained message. If it is, the permitted action
-is exactly one `tmux send-keys -t <reported-%pane_id> Enter`; do not paste or
-rerun the sender. Observe the pane afterwards, but do not relabel the script's
-earlier result as `SENT`. If complete ownership is not evident, send no key. The
-script records no attempts and performs no recovery.
+to the same `%pane_id`, inspect it directly and read-only, and judge whether the
+entire non-dim composer is exactly the retained message. If it is, the permitted
+action is exactly one `tmux send-keys -t <reported-%pane_id> Enter`; do not
+paste or rerun the sender. Observe the pane afterwards, but do not relabel the
+script's earlier result as `SENT`. If complete ownership is not evident, send no
+key. The script records no attempts and performs no recovery.
 
 `DELIVERY_UNVERIFIED interrupted-after-enter` never qualifies because the first
 Enter may still be pending. The interrupted-send exception deliberately leaves
@@ -156,8 +164,8 @@ make delivery possible.
 - `UNKNOWN server`: correct the tmux socket or server selection before another
   attempt. Do not back off blindly.
 - `UNKNOWN target`: a tmux listing to re-resolve the window by stable name is
-  permitted only when inspection is allowed and the target window appears to
-  have moved; list once. If either condition fails, or the window remains
+  permitted only when direct inspection is allowed and the target window appears
+  to have moved; list once. If either condition fails, or the window remains
   absent, escalate rather than guessing another pane. This condition covers
   recovery from this result only; it does not restrict how other workflows
   obtain an address in the first place.
@@ -172,10 +180,10 @@ The message may be absent, stranded in the composer, or already submitted.
 Never rerun the ordinary send automatically: it may duplicate a completed
 delivery. Send no Enter, Esc, `C-u`, or other key automatically.
 
-Read-only inspection is allowed by default. It is forbidden only when a separate
-instruction explicitly disallows inspection. Inspection may inform the caller
-or operator, but a clear composer alone and message text anywhere on screen do
-not prove delivery. Out-of-band evidence such as the recipient's reply may.
+Read-only direct inspection is allowed unless separately disallowed. It may
+inform the caller or operator, but a clear composer alone and message text
+anywhere on screen do not prove delivery. Out-of-band evidence such as the
+recipient's reply may.
 
 Retain the exact message file or reproducible stdin source. Escalate to the
 operator of the calling session; for a handoff, also notify the counterpart
