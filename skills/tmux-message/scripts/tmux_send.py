@@ -18,10 +18,14 @@ OCCUPIED = "OCCUPIED"
 DIALOG = "DIALOG"
 UNKNOWN = "UNKNOWN"
 SENT = "SENT"
+DELIVERY_UNVERIFIED = "DELIVERY_UNVERIFIED"
 
 EXIT_BY_STATE = {CLEAR: 0, OCCUPIED: 1, DIALOG: 2, UNKNOWN: 3}
 EXIT_DELIVERY_FAILED = 4
 EXIT_USAGE = 64
+
+VERIFY_WINDOW_SECONDS = 3.15
+INITIAL_VERIFY_DELAY_SECONDS = 0.05
 
 PROMPTS = ("❯", "›")
 KNOWN_EMPTY_PLACEHOLDERS = (
@@ -51,12 +55,24 @@ def _visible_with_dim(raw: str) -> list[tuple[str, bool]]:
         sgr = SGR_RE.fullmatch(sequence)
         if sgr:
             params = [int(value) if value else 0 for value in sgr.group(1).split(";")]
-            if 0 in params:
-                dim = False
-            if 2 in params:
-                dim = True
-            if 22 in params:
-                dim = False
+            index = 0
+            while index < len(params):
+                code = params[index]
+                if code in (38, 48, 58) and index + 1 < len(params):
+                    color_mode = params[index + 1]
+                    if color_mode == 5:
+                        index += 3
+                        continue
+                    if color_mode == 2:
+                        index += 5
+                        continue
+                if code == 0:
+                    dim = False
+                elif code == 2:
+                    dim = True
+                elif code == 22:
+                    dim = False
+                index += 1
         position = match.end()
     result.extend((char, dim) for char in raw[position:])
     return result
@@ -123,6 +139,18 @@ def _remainder_after_prompt(raw_line: str) -> tuple[str, list[tuple[str, bool]]]
     return "", []
 
 
+def _exact_remainder_after_prompt(raw_line: str) -> str | None:
+    annotated = _visible_with_dim(raw_line)
+    for index, (char, _) in enumerate(annotated):
+        if char not in PROMPTS:
+            continue
+        remainder = "".join(value for value, _ in annotated[index + 1 :])
+        if remainder.startswith((" ", "\u00a0")):
+            remainder = remainder[1:]
+        return remainder
+    return None
+
+
 def _known_empty_placeholder(text: str) -> bool:
     return any(pattern.fullmatch(text) for pattern in KNOWN_EMPTY_PLACEHOLDERS)
 
@@ -166,14 +194,21 @@ def classify_capture(raw: str) -> str:
     return CLEAR
 
 
-def _tmux(*arguments: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["tmux", *arguments],
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+def _tmux(
+    *arguments: str, input_text: str | None = None
+) -> subprocess.CompletedProcess[str]:
+    command = ["tmux", *arguments]
+    try:
+        return subprocess.run(
+            command,
+            check=False,
+            input=input_text,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except OSError as error:
+        return subprocess.CompletedProcess(command, 127, "", str(error))
 
 
 def _capture_target(target: str) -> tuple[str, str, str]:
@@ -189,24 +224,60 @@ def classify_target(target: str) -> tuple[str, str]:
     return state, detail
 
 
+def _wait_for_clear(
+    target: str,
+    *,
+    clock=time.monotonic,
+    sleep=time.sleep,
+) -> tuple[str, str, str]:
+    deadline = clock() + VERIFY_WINDOW_SECONDS
+    delay = INITIAL_VERIFY_DELAY_SECONDS
+    result = (UNKNOWN, "verification did not run", "")
+    while True:
+        remaining = deadline - clock()
+        if remaining <= 0:
+            return result
+        sleep(min(delay, remaining))
+        result = _capture_target(target)
+        if result[0] == CLEAR:
+            return result
+        delay *= 2
+
+
 def _composer_text(raw: str) -> str | None:
     lines = raw.splitlines()
     candidate = _prompt_candidate(lines)
     if candidate is None:
         return None
     prompt_index, prompt_line = candidate
-    if "❯" not in _visible(prompt_line):
+    first_line = _exact_remainder_after_prompt(prompt_line)
+    if first_line is None:
         return None
-    first_line, _ = _remainder_after_prompt(prompt_line)
-    content = [first_line]
-    found_lower_border = False
-    for line in lines[prompt_index + 1 :]:
-        if _is_horizontal_border(line):
-            found_lower_border = True
+    prompt_glyph = _visible(prompt_line).lstrip(" ")[0]
+
+    if prompt_glyph == "❯":
+        content = [first_line]
+        for line in lines[prompt_index + 1 :]:
+            if _is_horizontal_border(line):
+                return "\n".join(content)
+            content.append(_visible(line))
+        return None
+
+    # Codex leaves one blank layout row between the composer and its
+    # model/directory footer. Choose the last visible row after the prompt as
+    # that footer so prompt-like text inside the draft cannot terminate it.
+    following = lines[prompt_index + 1 :]
+    footer_index = None
+    for index in range(len(following) - 1, -1, -1):
+        if _visible(following[index]).strip():
+            footer_index = index
             break
-        content.append(_visible(line).rstrip())
-    if not found_lower_border:
+    if footer_index is None or " · " not in _visible(following[footer_index]):
         return None
+    content = [first_line] + [_visible(line) for line in following[:footer_index]]
+    if not content or content[-1].strip() != "":
+        return None
+    content.pop()
     return "\n".join(content)
 
 
@@ -224,49 +295,72 @@ def send_message(target: str, message_file: Path) -> int:
     state, detail = classify_target(target)
     if state != CLEAR:
         print(state)
-        suffix = f": {detail}" if detail else ""
-        print(f"refused: target {target} is {state}{suffix}", file=sys.stderr)
+        if state == OCCUPIED:
+            explanation = "target composer contains unsubmitted text"
+        elif state == DIALOG:
+            explanation = "target pane is showing a dialog"
+        else:
+            explanation = "target pane state could not be recognized"
+        suffix = f"; tmux reported: {detail}" if detail else ""
+        print(
+            f"{state}: {explanation}; nothing sent (target {target}){suffix}",
+            file=sys.stderr,
+        )
         return EXIT_BY_STATE[state]
 
     buffer_name = f"tmux-message-{os.getpid()}-{uuid.uuid4().hex}"
-    load = _tmux("load-buffer", "-b", buffer_name, str(message_file.resolve()))
+    load = _tmux("load-buffer", "-b", buffer_name, "-", input_text=message)
     if load.returncode != 0:
         print(UNKNOWN)
-        print(f"refused: could not load message file: {load.stderr.strip()}", file=sys.stderr)
+        print(
+            f"{UNKNOWN}: message buffer could not be prepared; nothing sent "
+            f"(target {target}); tmux reported: {load.stderr.strip()}",
+            file=sys.stderr,
+        )
         return EXIT_BY_STATE[UNKNOWN]
 
     paste = _tmux("paste-buffer", "-p", "-r", "-d", "-b", buffer_name, "-t", target)
     if paste.returncode != 0:
         _tmux("delete-buffer", "-b", buffer_name)
-        print(UNKNOWN)
-        print(f"delivery failed while pasting: {paste.stderr.strip()}", file=sys.stderr)
+        print(DELIVERY_UNVERIFIED)
+        print(
+            f"{DELIVERY_UNVERIFIED}: paste command failed; do not retry automatically "
+            f"(target {target}); tmux reported: {paste.stderr.strip()}",
+            file=sys.stderr,
+        )
         return EXIT_DELIVERY_FAILED
 
     time.sleep(0.05)
     submit = _tmux("send-keys", "-t", target, "Enter")
     if submit.returncode != 0:
-        print(UNKNOWN)
-        print(f"delivery failed while submitting: {submit.stderr.strip()}", file=sys.stderr)
+        print(DELIVERY_UNVERIFIED)
+        print(
+            f"{DELIVERY_UNVERIFIED}: message was pasted but Enter failed; do not retry "
+            f"automatically (target {target}); tmux reported: {submit.stderr.strip()}",
+            file=sys.stderr,
+        )
         return EXIT_DELIVERY_FAILED
 
-    post_state, post_detail, post_capture = _capture_target(target)
+    post_state, post_detail, post_capture = _wait_for_clear(target)
     if post_state == OCCUPIED and _composer_text(post_capture) == message:
         submit_again = _tmux("send-keys", "-t", target, "Enter")
         if submit_again.returncode != 0:
-            print(UNKNOWN)
+            print(DELIVERY_UNVERIFIED)
             print(
-                f"delivery failed while resubmitting the exact pasted message: "
-                f"{submit_again.stderr.strip()}",
+                f"{DELIVERY_UNVERIFIED}: the exact pasted message remained, but the "
+                f"single recovery Enter failed; do not retry automatically (target "
+                f"{target}); tmux reported: {submit_again.stderr.strip()}",
                 file=sys.stderr,
             )
             return EXIT_DELIVERY_FAILED
-        time.sleep(0.05)
-        post_state, post_detail, _ = _capture_target(target)
+        post_state, post_detail, _ = _wait_for_clear(target)
     if post_state != CLEAR:
-        print(post_state)
-        suffix = f": {post_detail}" if post_detail else ""
+        print(DELIVERY_UNVERIFIED)
+        suffix = f"; tmux reported: {post_detail}" if post_detail else ""
         print(
-            f"delivery attempted, but target {target} verified as {post_state}{suffix}",
+            f"{DELIVERY_UNVERIFIED}: message was pasted and Enter was sent, but "
+            f"post-send pane state is {post_state}; do not retry automatically "
+            f"(target {target}){suffix}",
             file=sys.stderr,
         )
         return EXIT_DELIVERY_FAILED
