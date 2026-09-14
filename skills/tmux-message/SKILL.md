@@ -57,9 +57,10 @@ Do not rewrite or truncate a message for transport. Avoid command substitution,
 JSON serialization, or shell interpolation that changes real LF characters or
 interprets message text.
 
-The sender refuses an empty or whitespace-only message. It also refuses every
-Unicode control character except line feed (`LF`) before resolving or mutating
-a tmux target. In particular, an embedded escape character could otherwise end
+The sender refuses a message with no visible substance, including empty,
+whitespace-only, and format-character-only input. It also refuses every Unicode
+control character except line feed (`LF`) before resolving or mutating a tmux
+target. In particular, an embedded escape character could otherwise end
 bracketed paste early and turn the remaining bytes into live keystrokes.
 
 ## Invoke the guarded sender
@@ -204,19 +205,20 @@ It recognizes only anchored Claude Code and Codex composer regions:
 - Continuation rows require the clients' two-column continuation indentation.
   Quoted or pasted prompt and border glyphs inside a draft do not become
   structural markers.
-- Bare composers and entirely SGR-dim suggestions are `CLEAR`. Plain
-  placeholder-like text is `OCCUPIED`; wording alone never proves emptiness.
+- Bare composers and entirely SGR-dim suggestions are `CLEAR`. A native paste
+  placeholder anywhere in the composer is `OCCUPIED` regardless of styling,
+  because it represents stored input rather than a replaceable suggestion.
 - Any dialog marker, mixed plain-plus-dim text, malformed region, or absent
   composer fails closed as `DIALOG`, `OCCUPIED`, or `UNKNOWN layout`.
 
-Before Enter, the script waits until one capture shows plain non-empty composer
-text or a client-native opaque paste placeholder after the successful paste
-command. A changed all-dim suggestion is still `CLEAR` and does not establish
-that the paste was processed. The only all-dim text accepted as processing
-evidence must full-match the native Claude Code `Pasted text` or `Truncated
-text` placeholder, or the native Codex `Pasted Content` placeholder. A stale
-clear frame does not qualify. If every capture in the 3.15-second window stays
-clear or unrecognized, the script produces `DELIVERY_UNVERIFIED
+Before Enter, the script waits until one capture shows non-empty composer text
+after the successful paste command. A changed all-dim suggestion remains
+`CLEAR` and does not establish that the paste was processed. A native Claude
+Code `Pasted text` or `Truncated text` placeholder, or native Codex `Pasted
+Content` placeholder, is always content and therefore `OCCUPIED`; because the
+initial composer had to be clear, its appearance after paste proves processing.
+A stale clear frame does not qualify. If every capture in the 3.15-second window
+stays clear or unrecognized, the script produces `DELIVERY_UNVERIFIED
 paste-not-observed` and sends no Enter.
 
 After one Enter, the script polls on the approved exponential schedule of 50,

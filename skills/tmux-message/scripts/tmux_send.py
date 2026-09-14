@@ -42,7 +42,9 @@ CLAUDE_FOOTER_RE = re.compile(r"^  ⏵⏵ \S")
 CLAUDE_PASTE_PLACEHOLDER_RE = re.compile(
     r"\[(?:Pasted text #\d+(?: \+\d+ lines)?|\.\.\.Truncated text #\d+ \+\d+ lines\.\.\.)\]"
 )
-CODEX_PASTE_PLACEHOLDER_RE = re.compile(r"\[Pasted Content \d+ chars\]")
+CODEX_PASTE_PLACEHOLDER_RE = re.compile(
+    r"\[Pasted Content \d+ chars\](?: #\d+)?"
+)
 DIALOG_PATTERNS = (
     re.compile(r"\benter to (?:confirm|select|submit)\b.*\besc to (?:cancel|close)\b"),
     re.compile(r"\bpress enter to (?:continue|select)\b"),
@@ -321,6 +323,18 @@ def _composer(lines: list[str], pane_width: int | None) -> Composer | None:
     )
 
 
+def _native_paste_placeholder_pattern(composer: Composer) -> re.Pattern[str]:
+    return (
+        CLAUDE_PASTE_PLACEHOLDER_RE
+        if composer.client == "claude"
+        else CODEX_PASTE_PLACEHOLDER_RE
+    )
+
+
+def _contains_native_paste_placeholder(composer: Composer) -> bool:
+    return _native_paste_placeholder_pattern(composer).search(composer.text) is not None
+
+
 def classify_capture(raw: str, pane_width: int | None = None) -> str:
     """Classify an ANSI-preserving capture without exposing its contents."""
     lines = raw.splitlines()
@@ -333,6 +347,8 @@ def classify_capture(raw: str, pane_width: int | None = None) -> str:
         return UNKNOWN
     if not composer.text.strip():
         return CLEAR
+    if _contains_native_paste_placeholder(composer):
+        return OCCUPIED
     if composer.has_dim_text and not composer.has_non_dim_text:
         return CLEAR
     return OCCUPIED
@@ -460,12 +476,7 @@ def _paste_processed(result: CaptureResult, before: Composer | None) -> bool:
 
 
 def _is_native_paste_placeholder(composer: Composer) -> bool:
-    pattern = (
-        CLAUDE_PASTE_PLACEHOLDER_RE
-        if composer.client == "claude"
-        else CODEX_PASTE_PLACEHOLDER_RE
-    )
-    return pattern.fullmatch(composer.text) is not None
+    return _native_paste_placeholder_pattern(composer).fullmatch(composer.text) is not None
 
 
 def _submit_cleared(result: CaptureResult, processed: CaptureResult) -> bool:
@@ -511,6 +522,11 @@ def _wait_for_clear(
 def _validate_message(message: str) -> None:
     if not message.strip():
         raise UsageError("message must contain non-whitespace text")
+    if not any(
+        not char.isspace() and unicodedata.category(char) != "Cf"
+        for char in message
+    ):
+        raise UsageError("message must contain visible text")
     if any(char != "\n" and unicodedata.category(char) == "Cc" for char in message):
         raise UsageError("message contains a control character other than LF")
 

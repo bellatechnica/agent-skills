@@ -73,6 +73,32 @@ class ClassifyCaptureTests(unittest.TestCase):
         capture = codex_capture("\x1b[2mAsk Codex to do anything\x1b[0m")
         self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "CLEAR")
 
+    def test_dim_native_paste_placeholders_are_occupied(self) -> None:
+        captures = (
+            codex_capture("\x1b[2m[Pasted Content 1834 chars]\x1b[0m"),
+            claude_capture("\x1b[2m[Pasted text #1 +20 lines]\x1b[0m"),
+        )
+        for capture in captures:
+            with self.subTest(client=capture[0]):
+                self.assertEqual(
+                    tmux_send.classify_capture(capture, WIDTH), "OCCUPIED"
+                )
+
+    def test_dim_placeholder_with_other_text_is_occupied(self) -> None:
+        captures = (
+            codex_capture(
+                "\x1b[2m[Pasted Content 1834 chars] #2 appended\x1b[0m"
+            ),
+            claude_capture(
+                "\x1b[2mprefix [Pasted text #1 +20 lines] suffix\x1b[0m"
+            ),
+        )
+        for capture in captures:
+            with self.subTest(client=capture[0]):
+                self.assertEqual(
+                    tmux_send.classify_capture(capture, WIDTH), "OCCUPIED"
+                )
+
     def test_codex_full_width_dim_editing_footer_recognizes_draft(self) -> None:
         capture = codex_editing_footer_capture("queued wake")
         self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "OCCUPIED")
@@ -330,6 +356,9 @@ class VerificationTests(unittest.TestCase):
     def test_native_placeholders_are_client_specific(self) -> None:
         placeholders = (
             tmux_send.Composer("codex", "[Pasted Content 100 chars]", True, False),
+            tmux_send.Composer(
+                "codex", "[Pasted Content 100 chars] #2", True, False
+            ),
             tmux_send.Composer("claude", "[Pasted text #1 +2 lines]", True, False),
             tmux_send.Composer(
                 "claude", "[...Truncated text #2 +7 lines...]", True, False
@@ -517,11 +546,31 @@ class OutputContractTests(unittest.TestCase):
                 self.assertEqual(code, 64)
                 resolve.assert_not_called()
 
+    def test_format_only_message_is_refused_before_tmux(self) -> None:
+        with (
+            mock.patch.object(tmux_send, "resolve_target") as resolve,
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            code = tmux_send.main(
+                ["s:w.0", "--shell-safe-text", "\u200b\u2060"]
+            )
+        self.assertEqual(code, 64)
+        resolve.assert_not_called()
+
     def test_occupied_is_non_idempotent_refusal(self) -> None:
         code, stdout, stderr, tmux_call = self.invoke(initial=owned("draft"))
         self.assertEqual((code, stdout), (1, "OCCUPIED\n"))
         self.assertIn("not assumed idempotent", stderr)
         self.assertIn("nothing sent", stderr)
+        self.assertEqual(tmux_call.call_count, 0)
+
+    def test_dim_native_placeholder_refuses_before_buffer_load(self) -> None:
+        raw = codex_capture("\x1b[2m[Pasted Content 1834 chars]\x1b[0m")
+        composer = tmux_send._composer(raw.splitlines(), WIDTH)
+        initial = result(tmux_send.classify_capture(raw, WIDTH), composer)
+        code, stdout, _, tmux_call = self.invoke(initial=initial)
+        self.assertEqual((code, stdout), (1, "OCCUPIED\n"))
         self.assertEqual(tmux_call.call_count, 0)
 
     def test_dialog_refuses_without_tmux_mutation(self) -> None:
