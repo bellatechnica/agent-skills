@@ -256,14 +256,33 @@ def _claude_composer(lines: list[str], pane_width: int | None) -> Composer | Non
     return Composer("claude", "\n".join(text_lines), has_dim, has_non_dim)
 
 
-def _codex_composer(lines: list[str]) -> Composer | None:
+def _is_codex_footer(raw_line: str, pane_width: int | None) -> bool:
+    visible = _visible(raw_line)
+    if CODEX_FOOTER_RE.match(visible.rstrip()):
+        return True
+    if pane_width is None or not visible.startswith("  "):
+        return False
+    annotated = _visible_with_dim(raw_line)
+    nonblank = [(char, dim) for char, dim in annotated if not char.isspace()]
+    # Codex 0.153.3 renders a configurable status line across the footer's
+    # pane-width-minus-indent area while a draft is present. Its text is not a
+    # stable identifier, so require the renderer's full-width, all-dim shape.
+    return (
+        len(visible) >= pane_width - 2
+        and bool(nonblank)
+        and all(dim for _char, dim in nonblank)
+    )
+
+
+def _codex_composer(
+    lines: list[str], pane_width: int | None
+) -> Composer | None:
     footer = None
     for index in range(len(lines) - 1, -1, -1):
-        visible = _visible(lines[index]).rstrip()
-        if visible and CODEX_FOOTER_RE.match(visible):
+        if _visible(lines[index]).strip():
             footer = index
             break
-    if footer is None:
+    if footer is None or not _is_codex_footer(lines[footer], pane_width):
         return None
 
     separator = footer - 1
@@ -297,7 +316,9 @@ def _codex_composer(lines: list[str]) -> Composer | None:
 
 
 def _composer(lines: list[str], pane_width: int | None) -> Composer | None:
-    return _claude_composer(lines, pane_width) or _codex_composer(lines)
+    return _claude_composer(lines, pane_width) or _codex_composer(
+        lines, pane_width
+    )
 
 
 def classify_capture(raw: str, pane_width: int | None = None) -> str:

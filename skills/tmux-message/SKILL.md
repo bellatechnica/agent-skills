@@ -198,7 +198,9 @@ It recognizes only anchored Claude Code and Codex composer regions:
 - Claude Code requires full-width top and bottom borders and one column-zero
   `❯` prompt inside them, followed immediately by its bottom status row.
 - Codex requires one column-zero `›` prompt followed by its structural spacer
-  and model/directory footer.
+  and bottommost footer. The footer is either the model/directory summary or
+  the full-width, entirely dim editing status line used while a draft is
+  present; a short dim row or later nonblank output fails closed.
 - Continuation rows require the clients' two-column continuation indentation.
   Quoted or pasted prompt and border glyphs inside a draft do not become
   structural markers.

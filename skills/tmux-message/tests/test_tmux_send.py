@@ -37,6 +37,12 @@ def codex_capture(first: str = "", *continuations: str) -> str:
     return "\n".join(rows) + "\n"
 
 
+def codex_editing_footer_capture(first: str = "draft") -> str:
+    footer_width = WIDTH - 2
+    footer = "  status".ljust(footer_width, "·")
+    return f"› {first}\n\n\x1b[2m{footer}\x1b[0m\n"
+
+
 def pane() -> object:
     return tmux_send.PaneIdentity("%7", "777", WIDTH, "/tmp/tmux.sock", "123", "s:w.0")
 
@@ -66,6 +72,23 @@ class ClassifyCaptureTests(unittest.TestCase):
     def test_codex_dim_suggestion_is_clear(self) -> None:
         capture = codex_capture("\x1b[2mAsk Codex to do anything\x1b[0m")
         self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "CLEAR")
+
+    def test_codex_full_width_dim_editing_footer_recognizes_draft(self) -> None:
+        capture = codex_editing_footer_capture("queued wake")
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "OCCUPIED")
+
+    def test_codex_short_dim_row_is_not_an_editing_footer(self) -> None:
+        capture = "› queued wake\n\n\x1b[2m  short status\x1b[0m\n"
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
+
+    def test_codex_full_width_plain_row_is_not_an_editing_footer(self) -> None:
+        footer = "  status".ljust(WIDTH - 2, "·")
+        capture = f"› queued wake\n\n{footer}\n"
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
+
+    def test_codex_footer_must_be_bottommost_nonblank_row(self) -> None:
+        capture = codex_capture("queued wake") + "active output\n"
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
 
     def test_claude_bare_prompt_is_clear(self) -> None:
         self.assertEqual(tmux_send.classify_capture(claude_capture(), WIDTH), "CLEAR")
