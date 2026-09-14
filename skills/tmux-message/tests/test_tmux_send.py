@@ -21,6 +21,9 @@ SPEC.loader.exec_module(tmux_send)
 
 WIDTH = 40
 BORDER = "─" * WIDTH
+TEXT_FOREGROUND = "\x1b[38;2;238;238;238m"
+MUTED_FOREGROUND = "\x1b[38;2;128;128;128m"
+RESET_STYLE = "\x1b[0m"
 
 
 def claude_capture(first: str = "", *continuations: str) -> str:
@@ -41,6 +44,42 @@ def codex_editing_footer_capture(first: str = "draft") -> str:
     footer_width = WIDTH - 2
     footer = "  status".ljust(footer_width, "·")
     return f"› {first}\n\n\x1b[2m{footer}\x1b[0m\n"
+
+
+def agy_capture(first: str = "", *continuations: str) -> str:
+    rows = [BORDER, ">" if not first else f"> {first}"]
+    rows.extend(f"  {row}" for row in continuations)
+    footer = "  ? for shortcuts".ljust(22) + "Gemini 3.8 Flash · high"
+    rows.extend([BORDER, footer])
+    return "\n".join(rows) + "\n"
+
+
+def opencode_capture(
+    first: str = "",
+    *continuations: str,
+    foreground: str = TEXT_FOREGROUND,
+    mode_row: str = "Build · Test Model",
+    hint: str | None = None,
+) -> tuple[str, int, int]:
+    left = 2
+    input_left = left + 3
+    box_width = 70
+    content_rows = [first, *continuations]
+    rows = ["  ┃" + " " * (box_width - 1)]
+    rows.extend(
+        f"  ┃  {foreground}{row}{RESET_STYLE}" for row in content_rows
+    )
+    rows.append("  ┃")
+    rows.append(f"  ┃  {mode_row}")
+    rows.append("  ╹" + "▀" * (box_width - 1))
+    rows.append(
+        hint
+        if hint is not None
+        else f"   ctrl+p {MUTED_FOREGROUND}commands{RESET_STYLE}"
+    )
+    cursor_y = 1
+    cursor_x = input_left + (len(first) if first else 0)
+    return "\n".join(rows) + "\n", cursor_x, cursor_y
 
 
 def pane() -> object:
@@ -118,6 +157,113 @@ class ClassifyCaptureTests(unittest.TestCase):
 
     def test_claude_bare_prompt_is_clear(self) -> None:
         self.assertEqual(tmux_send.classify_capture(claude_capture(), WIDTH), "CLEAR")
+
+    def test_agy_bare_prompt_is_clear(self) -> None:
+        self.assertEqual(tmux_send.classify_capture(agy_capture(), WIDTH), "CLEAR")
+
+    def test_agy_typed_and_multiline_drafts_are_occupied(self) -> None:
+        for capture in (agy_capture("draft"), agy_capture("first", "second")):
+            with self.subTest(capture=capture):
+                self.assertEqual(
+                    tmux_send.classify_capture(capture, WIDTH), "OCCUPIED"
+                )
+
+    def test_agy_native_paste_placeholder_is_occupied(self) -> None:
+        capture = agy_capture("\x1b[2m[Pasted text #1 +3 lines]\x1b[0m")
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "OCCUPIED")
+
+    def test_agy_requires_its_model_footer(self) -> None:
+        capture = agy_capture("draft").replace("Gemini 3.8 Flash · high", "status")
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
+
+    def test_opencode_blank_composer_is_clear(self) -> None:
+        capture, cursor_x, cursor_y = opencode_capture()
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, cursor_x, cursor_y),
+            "CLEAR",
+        )
+
+    def test_opencode_muted_official_placeholder_is_clear(self) -> None:
+        for ellipsis in ("...", "…"):
+            with self.subTest(ellipsis=ellipsis):
+                capture, _cursor_x, cursor_y = opencode_capture(
+                    f'Ask anything{ellipsis} "Fix broken tests"',
+                    foreground=MUTED_FOREGROUND,
+                )
+                self.assertEqual(
+                    tmux_send.classify_capture(capture, WIDTH, 5, cursor_y),
+                    "CLEAR",
+                )
+
+    def test_opencode_placeholder_words_in_normal_text_are_occupied(self) -> None:
+        capture, _cursor_x, cursor_y = opencode_capture(
+            'Ask anything... "Fix broken tests"'
+        )
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, 5, cursor_y),
+            "OCCUPIED",
+        )
+
+    def test_opencode_native_paste_placeholder_is_occupied(self) -> None:
+        capture, cursor_x, cursor_y = opencode_capture("[Pasted ~3 lines]")
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, cursor_x, cursor_y),
+            "OCCUPIED",
+        )
+
+    def test_opencode_multiline_draft_is_reconstructed(self) -> None:
+        capture, cursor_x, cursor_y = opencode_capture("first", "second")
+        composer = tmux_send._composer(
+            capture.splitlines(), WIDTH, cursor_x, cursor_y
+        )
+        self.assertEqual(composer.text, "first\nsecond")
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, cursor_x, cursor_y),
+            "OCCUPIED",
+        )
+
+    def test_opencode_cursor_outside_composer_is_dialog(self) -> None:
+        capture, _cursor_x, _cursor_y = opencode_capture()
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, 20, 0),
+            "DIALOG",
+        )
+
+    def test_opencode_shell_mode_is_dialog_for_blank_and_home_prompt(self) -> None:
+        drafts = ("", 'Run a command... "git status"', 'Run a command… "git status"')
+        for draft in drafts:
+            with self.subTest(draft=draft):
+                capture, _cursor_x, cursor_y = opencode_capture(
+                    draft,
+                    foreground=MUTED_FOREGROUND,
+                    mode_row="Shell",
+                    hint="   esc exit shell mode",
+                )
+                self.assertEqual(
+                    tmux_send.classify_capture(capture, WIDTH, 5, cursor_y),
+                    "DIALOG",
+                )
+
+    def test_opencode_box_requires_normal_mode_hint(self) -> None:
+        capture, cursor_x, cursor_y = opencode_capture(
+            hint="   unrelated footer"
+        )
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, cursor_x, cursor_y),
+            "DIALOG",
+        )
+
+    def test_opencode_region_without_cursor_is_unknown(self) -> None:
+        capture, _cursor_x, _cursor_y = opencode_capture()
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
+
+    def test_malformed_opencode_box_is_unknown(self) -> None:
+        capture, cursor_x, cursor_y = opencode_capture("draft")
+        malformed = capture.replace("  ╹" + "▀" * 69, "  ╹short")
+        self.assertEqual(
+            tmux_send.classify_capture(malformed, WIDTH, cursor_x, cursor_y),
+            "UNKNOWN",
+        )
 
     def test_plain_placeholder_is_occupied(self) -> None:
         capture = claude_capture('Try "rm -rf build..."')
@@ -235,6 +381,32 @@ class ClassifyCaptureTests(unittest.TestCase):
         )
         composer = tmux_send._composer(capture.splitlines(), WIDTH)
         self.assertEqual(composer.text, content)
+
+
+class CaptureTargetTests(unittest.TestCase):
+    @staticmethod
+    def completed(stdout: str) -> mock.Mock:
+        return mock.Mock(returncode=0, stdout=stdout, stderr="")
+
+    def test_opencode_capture_queries_cursor_and_classifies_composer(self) -> None:
+        capture, cursor_x, cursor_y = opencode_capture()
+        responses = (
+            self.completed(capture),
+            self.completed(f"{cursor_x}\t{cursor_y}\n"),
+        )
+        with mock.patch.object(tmux_send, "_tmux", side_effect=responses) as call:
+            actual = tmux_send.capture_target(pane())
+        self.assertEqual(actual.state, "CLEAR")
+        self.assertEqual(actual.composer.client, "opencode")
+        self.assertEqual(call.call_args_list[1].args[0], "display-message")
+
+    def test_opencode_invalid_cursor_position_fails_closed(self) -> None:
+        capture, _cursor_x, _cursor_y = opencode_capture()
+        responses = (self.completed(capture), self.completed("not-a-position\n"))
+        with mock.patch.object(tmux_send, "_tmux", side_effect=responses):
+            actual = tmux_send.capture_target(pane())
+        self.assertEqual((actual.state, actual.detail_class), ("UNKNOWN", "layout"))
+        self.assertIsNone(actual.composer)
 
 
 class ResolveTargetTests(unittest.TestCase):
@@ -577,6 +749,16 @@ class OutputContractTests(unittest.TestCase):
         code, stdout, stderr, tmux_call = self.invoke(initial=result("DIALOG"))
         self.assertEqual((code, stdout), (2, "DIALOG\n"))
         self.assertIn("nothing sent", stderr)
+        self.assertEqual(tmux_call.call_count, 0)
+
+    def test_opencode_shell_mode_refuses_before_buffer_load(self) -> None:
+        capture, _cursor_x, cursor_y = opencode_capture(
+            mode_row="Shell",
+            hint="   esc exit shell mode",
+        )
+        state = tmux_send.classify_capture(capture, WIDTH, 5, cursor_y)
+        code, stdout, _stderr, tmux_call = self.invoke(initial=result(state))
+        self.assertEqual((code, stdout), (2, "DIALOG\n"))
         self.assertEqual(tmux_call.call_count, 0)
 
     def test_layout_unknown_names_class(self) -> None:

@@ -39,12 +39,24 @@ OSC_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)")
 SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
 CODEX_FOOTER_RE = re.compile(r"^  \S.* · \S")
 CLAUDE_FOOTER_RE = re.compile(r"^  ⏵⏵ \S")
+AGY_FOOTER_RE = re.compile(r".*\S · (?:low|medium|high)$", re.IGNORECASE)
 CLAUDE_PASTE_PLACEHOLDER_RE = re.compile(
     r"\[(?:Pasted text #\d+(?: \+\d+ lines)?|\.\.\.Truncated text #\d+ \+\d+ lines\.\.\.)\]"
 )
 CODEX_PASTE_PLACEHOLDER_RE = re.compile(
     r"\[Pasted Content \d+ chars\](?: #\d+)?"
 )
+OPENCODE_PASTE_PLACEHOLDER_RE = re.compile(r"\[Pasted ~\d+ lines\]")
+OPENCODE_HOME_PLACEHOLDERS = frozenset(
+    f'Ask anything{ellipsis} "{example}"'
+    for ellipsis in ("...", "…")
+    for example in (
+        "Fix a TODO in the codebase",
+        "What is the tech stack of this project?",
+        "Fix broken tests",
+    )
+)
+OPENCODE_NORMAL_HINT_RE = re.compile(r"\bctrl\+p\s+commands\b", re.IGNORECASE)
 DIALOG_PATTERNS = (
     re.compile(r"\benter to (?:confirm|select|submit)\b.*\besc to (?:cancel|close)\b"),
     re.compile(r"\bpress enter to (?:continue|select)\b"),
@@ -98,18 +110,31 @@ class CaptureResult:
     composer: Composer | None
 
 
+@dataclass(frozen=True)
+class OpenCodeRegion:
+    top: int
+    bottom: int
+    left: int
+    right: int
+
+
 def _visible(raw: str) -> str:
     return CSI_RE.sub("", OSC_RE.sub("", raw))
 
 
-def _visible_with_dim(raw: str) -> list[tuple[str, bool]]:
-    """Return visible characters paired with their SGR-dim state."""
-    result: list[tuple[str, bool]] = []
+def _visible_with_style(
+    raw: str,
+) -> list[tuple[str, bool, tuple[int, ...] | None]]:
+    """Return visible characters with their SGR dim and foreground states."""
+    result: list[tuple[str, bool, tuple[int, ...] | None]] = []
     dim = False
+    foreground: tuple[int, ...] | None = None
     position = 0
     escape_re = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]")
     for match in escape_re.finditer(raw):
-        result.extend((char, dim) for char in raw[position : match.start()])
+        result.extend(
+            (char, dim, foreground) for char in raw[position : match.start()]
+        )
         sgr = SGR_RE.fullmatch(match.group())
         if sgr:
             params = [int(value) if value else 0 for value in sgr.group(1).split(";")]
@@ -118,22 +143,36 @@ def _visible_with_dim(raw: str) -> list[tuple[str, bool]]:
                 code = params[index]
                 if code in (38, 48, 58) and index + 1 < len(params):
                     color_mode = params[index + 1]
-                    if color_mode == 5:
+                    if color_mode == 5 and index + 2 < len(params):
+                        if code == 38:
+                            foreground = (38, 5, params[index + 2])
                         index += 3
                         continue
-                    if color_mode == 2:
+                    if color_mode == 2 and index + 4 < len(params):
+                        if code == 38:
+                            foreground = (38, 2, *params[index + 2 : index + 5])
                         index += 5
                         continue
                 if code == 0:
                     dim = False
+                    foreground = None
                 elif code == 2:
                     dim = True
                 elif code == 22:
                     dim = False
+                elif 30 <= code <= 37 or 90 <= code <= 97:
+                    foreground = (code,)
+                elif code == 39:
+                    foreground = None
                 index += 1
         position = match.end()
-    result.extend((char, dim) for char in raw[position:])
+    result.extend((char, dim, foreground) for char in raw[position:])
     return result
+
+
+def _visible_with_dim(raw: str) -> list[tuple[str, bool]]:
+    """Return visible characters paired with their SGR-dim state."""
+    return [(char, dim) for char, dim, _foreground in _visible_with_style(raw)]
 
 
 def _is_dialog(lines: list[str]) -> bool:
@@ -258,6 +297,58 @@ def _claude_composer(lines: list[str], pane_width: int | None) -> Composer | Non
     return Composer("claude", "\n".join(text_lines), has_dim, has_non_dim)
 
 
+def _agy_composer(lines: list[str], pane_width: int | None) -> Composer | None:
+    bottom = None
+    for index in range(len(lines) - 1, -1, -1):
+        if _is_plain_full_width_border(lines[index], pane_width):
+            bottom = index
+            break
+    if bottom is None:
+        return None
+
+    trailing_nonblank = [
+        _visible(line).rstrip() for line in lines[bottom + 1 :] if _visible(line).strip()
+    ]
+    if len(trailing_nonblank) != 1 or AGY_FOOTER_RE.fullmatch(
+        trailing_nonblank[0]
+    ) is None:
+        return None
+
+    top = None
+    for index in range(bottom - 1, -1, -1):
+        if _is_plain_full_width_border(lines[index], pane_width):
+            top = index
+            break
+    if top is None:
+        return None
+
+    region = lines[top + 1 : bottom]
+    prompt_indices = [
+        index for index, line in enumerate(region) if _visible(line).startswith(">")
+    ]
+    if prompt_indices != [0]:
+        return None
+
+    first = _remove_prompt_separator(
+        region[0],
+        ">",
+        trim_display_padding=True,
+    )
+    if first is None:
+        return None
+    text_lines = [first[0]]
+    has_dim = first[1]
+    has_non_dim = first[2]
+    for line in region[1:]:
+        continuation = _continuation(line, trim_display_padding=True)
+        if continuation is None:
+            return None
+        text_lines.append(continuation[0])
+        has_dim = has_dim or continuation[1]
+        has_non_dim = has_non_dim or continuation[2]
+    return Composer("agy", "\n".join(text_lines), has_dim, has_non_dim)
+
+
 def _is_codex_footer(raw_line: str, pane_width: int | None) -> bool:
     visible = _visible(raw_line)
     if CODEX_FOOTER_RE.match(visible.rstrip()):
@@ -317,32 +408,156 @@ def _codex_composer(
     return Composer("codex", "\n".join(text_lines), has_dim, has_non_dim)
 
 
-def _composer(lines: list[str], pane_width: int | None) -> Composer | None:
-    return _claude_composer(lines, pane_width) or _codex_composer(
-        lines, pane_width
+def _opencode_region(lines: list[str]) -> OpenCodeRegion | None:
+    for bottom in range(len(lines) - 1, -1, -1):
+        visible = _visible(lines[bottom]).rstrip()
+        stripped = visible.lstrip(" ")
+        if (
+            len(stripped) < 8
+            or not stripped.startswith("╹")
+            or any(char not in "╹▀" for char in stripped)
+        ):
+            continue
+        left = len(visible) - len(stripped)
+        top = bottom - 1
+        while top >= 0:
+            row = _visible(lines[top])
+            if (
+                len(row) <= left
+                or row[:left].strip()
+                or row[left] != "┃"
+            ):
+                break
+            top -= 1
+        top += 1
+        if bottom - top >= 4:
+            return OpenCodeRegion(top, bottom, left, left + len(stripped))
+    return None
+
+
+def _foreground_for_substring(
+    raw_line: str, substring: str
+) -> tuple[int, ...] | None:
+    styled = _visible_with_style(raw_line)
+    visible = "".join(char for char, _dim, _foreground in styled)
+    start = visible.find(substring)
+    if start < 0:
+        return None
+    foregrounds = {
+        foreground
+        for char, _dim, foreground in styled[start : start + len(substring)]
+        if not char.isspace()
+    }
+    if len(foregrounds) != 1:
+        return None
+    [foreground] = foregrounds
+    return foreground
+
+
+def _opencode_composer(
+    lines: list[str],
+    cursor_x: int | None,
+    cursor_y: int | None,
+) -> Composer | None:
+    region = _opencode_region(lines)
+    if region is None or cursor_x is None or cursor_y is None:
+        return None
+    input_left = region.left + 3
+    input_right = region.right - 2
+    input_top = region.top + 1
+    input_bottom = region.bottom - 1
+    if not (
+        input_left <= cursor_x <= input_right
+        and input_top <= cursor_y < input_bottom
+    ):
+        return None
+
+    text_lines: list[str] = []
+    has_dim = False
+    has_non_dim = False
+    content_foregrounds: set[tuple[int, ...] | None] = set()
+    for index in range(input_top, input_bottom):
+        styled = _visible_with_style(lines[index])[input_left:input_right]
+        text, row_dim, row_non_dim = _content(
+            [(char, dim) for char, dim, _foreground in styled]
+        )
+        text_lines.append(text.rstrip(" "))
+        has_dim = has_dim or row_dim
+        has_non_dim = has_non_dim or row_non_dim
+        content_foregrounds.update(
+            foreground
+            for char, _dim, foreground in styled
+            if not char.isspace()
+        )
+    while text_lines and not text_lines[-1]:
+        text_lines.pop()
+    text = "\n".join(text_lines)
+
+    hint_line = lines[region.bottom + 1] if region.bottom + 1 < len(lines) else ""
+    if OPENCODE_NORMAL_HINT_RE.search(_visible(hint_line)) is None:
+        return None
+    muted_foreground = _foreground_for_substring(hint_line, "commands")
+    if (
+        text in OPENCODE_HOME_PLACEHOLDERS
+        and cursor_x == input_left
+        and cursor_y == input_top
+        and muted_foreground is not None
+        and content_foregrounds == {muted_foreground}
+    ):
+        return Composer("opencode", text, True, False)
+    return Composer("opencode", text, has_dim, has_non_dim)
+
+
+def _opencode_dialog(
+    lines: list[str], cursor_x: int | None, cursor_y: int | None
+) -> bool:
+    region = _opencode_region(lines)
+    if region is None or cursor_x is None or cursor_y is None:
+        return False
+    return _opencode_composer(lines, cursor_x, cursor_y) is None
+
+
+def _composer(
+    lines: list[str],
+    pane_width: int | None,
+    cursor_x: int | None = None,
+    cursor_y: int | None = None,
+) -> Composer | None:
+    return (
+        _claude_composer(lines, pane_width)
+        or _agy_composer(lines, pane_width)
+        or _codex_composer(lines, pane_width)
+        or _opencode_composer(lines, cursor_x, cursor_y)
     )
 
 
 def _native_paste_placeholder_pattern(composer: Composer) -> re.Pattern[str]:
-    return (
-        CLAUDE_PASTE_PLACEHOLDER_RE
-        if composer.client == "claude"
-        else CODEX_PASTE_PLACEHOLDER_RE
-    )
+    if composer.client in ("claude", "agy"):
+        return CLAUDE_PASTE_PLACEHOLDER_RE
+    if composer.client == "opencode":
+        return OPENCODE_PASTE_PLACEHOLDER_RE
+    return CODEX_PASTE_PLACEHOLDER_RE
 
 
 def _contains_native_paste_placeholder(composer: Composer) -> bool:
     return _native_paste_placeholder_pattern(composer).search(composer.text) is not None
 
 
-def classify_capture(raw: str, pane_width: int | None = None) -> str:
+def classify_capture(
+    raw: str,
+    pane_width: int | None = None,
+    cursor_x: int | None = None,
+    cursor_y: int | None = None,
+) -> str:
     """Classify an ANSI-preserving capture without exposing its contents."""
     lines = raw.splitlines()
     if not lines:
         return UNKNOWN
     if _is_dialog(lines):
         return DIALOG
-    composer = _composer(lines, pane_width)
+    if _opencode_dialog(lines, cursor_x, cursor_y):
+        return DIALOG
+    composer = _composer(lines, pane_width, cursor_x, cursor_y)
     if composer is None:
         return UNKNOWN
     if not composer.text.strip():
@@ -455,14 +670,39 @@ def capture_target(pane: PaneIdentity) -> CaptureResult:
             capture.stderr.strip() or "resolved pane vanished before capture",
             None,
         )
-    state = classify_capture(capture.stdout, pane.pane_width)
+    lines = capture.stdout.splitlines()
+    cursor_x = None
+    cursor_y = None
+    if _opencode_region(lines) is not None:
+        cursor = _tmux(
+            "display-message",
+            "-p",
+            "-t",
+            pane.pane_id,
+            "#{cursor_x}\t#{cursor_y}",
+        )
+        if cursor.returncode != 0:
+            return CaptureResult(
+                UNKNOWN,
+                "target",
+                cursor.stderr.strip() or "resolved pane vanished before cursor query",
+                None,
+            )
+        fields = cursor.stdout.strip().split("\t")
+        if len(fields) != 2:
+            return CaptureResult(UNKNOWN, "layout", "invalid cursor position", None)
+        try:
+            cursor_x, cursor_y = (int(field) for field in fields)
+        except ValueError:
+            return CaptureResult(UNKNOWN, "layout", "invalid cursor position", None)
+    state = classify_capture(capture.stdout, pane.pane_width, cursor_x, cursor_y)
     if state == UNKNOWN:
         return CaptureResult(UNKNOWN, "layout", "pane shape is not recognized", None)
     return CaptureResult(
         state,
         "",
         "",
-        _composer(capture.stdout.splitlines(), pane.pane_width),
+        _composer(lines, pane.pane_width, cursor_x, cursor_y),
     )
 
 

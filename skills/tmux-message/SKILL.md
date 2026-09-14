@@ -1,6 +1,6 @@
 ---
 name: tmux-message
-description: Deliver one non-idempotent message to a Claude Code or Codex tmux pane through a fail-closed sender that pins the pane, classifies its composer, uses bracketed paste, and verifies a positive submit transition. Use whenever pinging, replying to, or handing something to a session in another tmux pane, including merge requests, verdicts, handoff prompts, status pings, and Agent Relay wake notices.
+description: Deliver one message to a Claude Code, Codex, Antigravity CLI, or OpenCode tmux pane through a fail-closed sender that pins the pane, classifies its composer, uses bracketed paste, and verifies a positive submit transition. Use whenever pinging, replying to, or handing something to a session in another tmux pane, including merge requests, verdicts, handoff prompts, status pings, and Agent Relay wake notices.
 ---
 
 # Message another session through tmux
@@ -33,6 +33,10 @@ distinguish a confirmed pre-send refusal from an uncertain attempt.
 - A busy session is valid only when its structurally recognized composer is
   still visible. Activity text without a composer is `UNKNOWN layout`, not
   permission to type.
+- OpenCode interprets Enter in a visible composer during an active response as
+  a steering message. The sender uses the client's ordinary Enter action; it
+  does not change that message into OpenCode's separately queued Alt+Enter
+  action.
 
 ## Supply the exact message
 
@@ -206,7 +210,9 @@ The script captures ANSI attributes and joins soft-wrapped terminal rows:
 
     tmux capture-pane -p -e -J -t <pinned-pane-id>
 
-It recognizes only anchored Claude Code and Codex composer regions:
+It recognizes only anchored Claude Code, Codex, Antigravity CLI, and OpenCode
+composer regions. The Antigravity CLI 1.1.27 and OpenCode 1.18.31 shapes were
+live-checked on 2026-09-14:
 
 - Claude Code requires full-width top and bottom borders and one column-zero
   `❯` prompt inside them, followed immediately by its bottom status row.
@@ -214,6 +220,19 @@ It recognizes only anchored Claude Code and Codex composer regions:
   and bottommost footer. The footer is either the model/directory summary or
   the full-width, entirely dim editing status line used while a draft is
   present; a short dim row or later nonblank output fails closed.
+- Antigravity CLI requires full-width top and bottom borders, one column-zero
+  `>` prompt, two-column continuation indentation, and the model-and-effort
+  footer immediately below the lower border. Its `!` shell mode does not match
+  that structure and is `UNKNOWN layout`.
+- OpenCode requires the bottommost `┃` input box and its `╹▀` lower border. The
+  terminal cursor must be inside the box's text area; a command palette or
+  another overlay leaves the box rendered behind it but moves the cursor, so
+  that state is `DIALOG`. A positive `ctrl+p commands` hint must also follow the
+  box, so OpenCode's `!` shell mode is `DIALOG` and sender input cannot execute
+  as a shell command. On the home screen, only an exact built-in `Ask anything`
+  prompt, with either the ASCII or Unicode ellipsis and the same foreground
+  color as the muted `commands` hint, is replaceable. The same words in the
+  normal input color are a real draft. `Run a command` is never replaceable.
 - Continuation rows require the clients' two-column continuation indentation.
   Quoted or pasted prompt and border glyphs inside a draft do not become
   structural markers.
@@ -226,9 +245,10 @@ It recognizes only anchored Claude Code and Codex composer regions:
 Before Enter, the script waits until one capture shows non-empty composer text
 after the successful paste command. A changed all-dim suggestion remains
 `CLEAR` and does not establish that the paste was processed. A native Claude
-Code `Pasted text` or `Truncated text` placeholder, or native Codex `Pasted
-Content` placeholder, is always content and therefore `OCCUPIED`; because the
-initial composer had to be clear, its appearance after paste proves processing.
+Code or Antigravity CLI `Pasted text` or `Truncated text`
+placeholder, Codex `Pasted Content` placeholder, or OpenCode `Pasted ~N lines`
+placeholder is always content and therefore `OCCUPIED`; because the initial
+composer had to be clear, its appearance after paste proves processing.
 A stale clear frame does not qualify. If every capture in the 3.15-second window
 stays clear or unrecognized, the script produces `DELIVERY_UNVERIFIED
 paste-not-observed` and sends no Enter.
@@ -239,8 +259,9 @@ composer different from the processed-paste observation. It never sends a
 recovery Enter. The same dim placeholder or suggestion cannot satisfy both
 halves of the transition.
 
-Bracketed paste is required for Codex. Literal `send-keys` can trigger its
-paste-burst detector and strand raw text or a `[Pasted Content ...]` placeholder.
+Bracketed paste is used for every supported client. Literal `send-keys` can
+trigger a client's paste-burst handling, collapse multiline input, or strand raw
+text instead of preserving the intended message as one paste operation.
 
 The check and paste remain separate tmux commands, so the script cannot
 attribute content that another writer places in the composer concurrently. That
