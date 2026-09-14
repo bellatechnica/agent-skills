@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Classify a tmux agent composer and send only when it is clear."""
+"""Send one non-idempotent message to a structurally clear tmux composer."""
 
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -20,24 +22,67 @@ UNKNOWN = "UNKNOWN"
 SENT = "SENT"
 DELIVERY_UNVERIFIED = "DELIVERY_UNVERIFIED"
 
-EXIT_BY_STATE = {CLEAR: 0, OCCUPIED: 1, DIALOG: 2, UNKNOWN: 3}
-EXIT_DELIVERY_FAILED = 4
+EXIT_OCCUPIED = 1
+EXIT_DIALOG = 2
+EXIT_UNKNOWN = 3
+EXIT_DELIVERY_UNVERIFIED = 4
 EXIT_USAGE = 64
 
-VERIFY_WINDOW_SECONDS = 3.15
-INITIAL_VERIFY_DELAY_SECONDS = 0.05
-
-PROMPTS = ("❯", "›")
-KNOWN_EMPTY_PLACEHOLDERS = (
-    re.compile(r'^Ask Codex to do anything$'),
-    re.compile(r'^Try ".*\.\.\."$'),
-    re.compile(r'^Press up to edit queued messages$'),
-    re.compile(r'^Use /skills to list available skills$'),
-)
+VERIFY_DELAYS_SECONDS = (0.05, 0.1, 0.2, 0.4, 0.8, 1.6)
 
 CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 OSC_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)")
 SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
+CODEX_FOOTER_RE = re.compile(r"^  \S.* · \S")
+CLAUDE_FOOTER_RE = re.compile(r"^  ⏵⏵ \S")
+DIALOG_PATTERNS = (
+    re.compile(r"\benter to (?:confirm|select|submit)\b.*\besc to (?:cancel|close)\b"),
+    re.compile(r"\bpress enter to (?:continue|select)\b"),
+    re.compile(r"\benter to select\b"),
+    re.compile(r"\bspace to toggle\b.*\benter to confirm\b"),
+    re.compile(r"\btab/arrow keys to navigate\b.*\besc to cancel\b"),
+    re.compile(r"\bshift\+tab use plan mode\b.*\besc dismiss\b"),
+    re.compile(r"\btype a name and press enter\b"),
+)
+
+
+class UsageError(Exception):
+    """The command line does not satisfy the public invocation contract."""
+
+
+class SignalInterruption(Exception):
+    """A catchable process signal interrupted delivery."""
+
+
+class Parser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        raise UsageError(message)
+
+
+@dataclass(frozen=True)
+class PaneIdentity:
+    pane_id: str
+    pane_pid: str
+    pane_width: int
+    socket_path: str
+    server_pid: str
+    requested_target: str
+
+
+@dataclass(frozen=True)
+class Composer:
+    client: str
+    text: str
+    has_dim_text: bool
+    has_non_dim_text: bool
+
+
+@dataclass(frozen=True)
+class CaptureResult:
+    state: str
+    detail_class: str
+    detail: str
+    composer: Composer | None
 
 
 def _visible(raw: str) -> str:
@@ -49,10 +94,10 @@ def _visible_with_dim(raw: str) -> list[tuple[str, bool]]:
     result: list[tuple[str, bool]] = []
     dim = False
     position = 0
-    for match in re.finditer(r"\x1b\].*?(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]", raw):
+    escape_re = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]")
+    for match in escape_re.finditer(raw):
         result.extend((char, dim) for char in raw[position : match.start()])
-        sequence = match.group()
-        sgr = SGR_RE.fullmatch(sequence)
+        sgr = SGR_RE.fullmatch(match.group())
         if sgr:
             params = [int(value) if value else 0 for value in sgr.group(1).split(";")]
             index = 0
@@ -79,119 +124,186 @@ def _visible_with_dim(raw: str) -> list[tuple[str, bool]]:
 
 
 def _is_dialog(lines: list[str]) -> bool:
-    nonblank = [_visible(line).strip() for line in lines if _visible(line).strip()]
-    footer = nonblank[-4:]
-    for line in footer:
-        lowered = line.casefold()
-        if re.match(r"^enter to (confirm|select)\b", lowered):
-            return True
-        if re.match(r"^press enter to continue\b", lowered):
-            return True
-        if "tab/arrow keys to navigate" in lowered and "esc to cancel" in lowered:
-            return True
-        if "shift+tab use plan mode" in lowered and "esc dismiss" in lowered:
-            return True
-    return False
-
-
-def _is_horizontal_border(raw_line: str) -> bool:
-    return _visible(raw_line).strip().startswith("────────")
-
-
-def _is_claude_composer(lines: list[str], prompt_index: int) -> bool:
-    previous = prompt_index - 1
-    while previous >= 0 and not _visible(lines[previous]).strip():
-        previous -= 1
-    if previous < 0 or not _is_horizontal_border(lines[previous]):
+    visible_nonblank = [_visible(line).strip().casefold() for line in lines]
+    nonblank = [line for line in visible_nonblank if line]
+    if not nonblank:
         return False
-    return any(_is_horizontal_border(line) for line in lines[prompt_index + 1 :])
+    # These patterns describe the dialog footer, which is the unique bottommost
+    # nonblank row. Looking earlier would let stale transcript text claim the UI.
+    footer = nonblank[-1]
+    return any(pattern.search(footer) for pattern in DIALOG_PATTERNS)
 
 
-def _prompt_candidate(lines: list[str]) -> tuple[int, str] | None:
+def _is_full_width_border(raw_line: str, pane_width: int | None) -> bool:
+    visible = _visible(raw_line).rstrip()
+    if not visible.startswith(("────", "━━━━")):
+        return False
+    if pane_width is None:
+        return len(visible) >= 8
+    return len(visible) >= pane_width - 1
+
+
+def _is_plain_full_width_border(raw_line: str, pane_width: int | None) -> bool:
+    visible = _visible(raw_line).rstrip()
+    return _is_full_width_border(raw_line, pane_width) and set(visible) <= {"─", "━"}
+
+
+def _content(annotated: list[tuple[str, bool]]) -> tuple[str, bool, bool]:
+    text = "".join(char for char, _ in annotated)
+    has_dim = any(dim for char, dim in annotated if not char.isspace())
+    has_non_dim = any(not dim for char, dim in annotated if not char.isspace())
+    return text, has_dim, has_non_dim
+
+
+def _remove_prompt_separator(
+    raw_line: str,
+    prompt: str,
+    *,
+    trim_display_padding: bool = False,
+) -> tuple[str, bool, bool] | None:
+    annotated = _visible_with_dim(raw_line)
+    if not annotated or annotated[0][0] != prompt:
+        return None
+    remainder = annotated[1:]
+    if remainder and remainder[0][0] in (" ", "\u00a0"):
+        remainder = remainder[1:]
+    text, has_dim, has_non_dim = _content(remainder)
+    if trim_display_padding:
+        text = text.rstrip(" ")
+    return text, has_dim, has_non_dim
+
+
+def _continuation(
+    raw_line: str,
+    *,
+    trim_display_padding: bool = False,
+) -> tuple[str, bool, bool] | None:
+    annotated = _visible_with_dim(raw_line)
+    visible = "".join(char for char, _ in annotated)
+    # Both clients render an empty logical continuation as one or more blank
+    # styled cells even without capture-pane -N. The cells carry no recoverable
+    # input-space information, so only a wholly blank row maps to an empty line.
+    if not visible.strip():
+        return "", False, False
+    if not visible.startswith("  "):
+        return None
+    text, has_dim, has_non_dim = _content(annotated[2:])
+    if trim_display_padding:
+        text = text.rstrip(" ")
+    return text, has_dim, has_non_dim
+
+
+def _claude_composer(lines: list[str], pane_width: int | None) -> Composer | None:
+    bottom = None
     for index in range(len(lines) - 1, -1, -1):
-        visible = _visible(lines[index])
-        left_trimmed = visible.lstrip(" ")
-        indentation = len(visible) - len(left_trimmed)
-        if indentation > 2 or not left_trimmed.startswith(PROMPTS):
-            continue
-        if left_trimmed.startswith("❯") and not _is_claude_composer(lines, index):
-            continue
-        if indentation <= 2:
-            return index, lines[index]
-    return None
+        if _is_plain_full_width_border(lines[index], pane_width):
+            bottom = index
+            break
+    if bottom is None:
+        return None
 
+    trailing_nonblank = [
+        _visible(line).rstrip() for line in lines[bottom + 1 :] if _visible(line).strip()
+    ]
+    if len(trailing_nonblank) != 1 or not CLAUDE_FOOTER_RE.match(
+        trailing_nonblank[0]
+    ):
+        return None
 
-def _active_without_composer(lines: list[str]) -> bool:
-    tail = [_visible(line).strip().casefold() for line in lines if _visible(line).strip()][-6:]
-    return any(
-        (line.startswith(("⏵", "⏸")) and "esc to interrupt" in line)
-        or (line.startswith("• working") and "esc to interrupt" in line)
-        for line in tail
+    top = None
+    for index in range(bottom - 1, -1, -1):
+        if _is_full_width_border(lines[index], pane_width):
+            top = index
+            break
+    if top is None:
+        return None
+
+    region = lines[top + 1 : bottom]
+    prompt_indices = [
+        index for index, line in enumerate(region) if _visible(line).startswith("❯")
+    ]
+    if prompt_indices != [0]:
+        return None
+
+    first = _remove_prompt_separator(
+        region[0],
+        "❯",
+        trim_display_padding=True,
     )
+    if first is None:
+        return None
+    text_lines = [first[0]]
+    has_dim = first[1]
+    has_non_dim = first[2]
+    for line in region[1:]:
+        continuation = _continuation(line, trim_display_padding=True)
+        if continuation is None:
+            return None
+        text_lines.append(continuation[0])
+        has_dim = has_dim or continuation[1]
+        has_non_dim = has_non_dim or continuation[2]
+    return Composer("claude", "\n".join(text_lines), has_dim, has_non_dim)
 
 
-def _remainder_after_prompt(raw_line: str) -> tuple[str, list[tuple[str, bool]]]:
-    annotated = _visible_with_dim(raw_line)
-    for index, (char, _) in enumerate(annotated):
-        if char in PROMPTS:
-            remainder = annotated[index + 1 :]
-            return "".join(char for char, _ in remainder).strip(), remainder
-    return "", []
+def _codex_composer(lines: list[str]) -> Composer | None:
+    footer = None
+    for index in range(len(lines) - 1, -1, -1):
+        visible = _visible(lines[index]).rstrip()
+        if visible and CODEX_FOOTER_RE.match(visible):
+            footer = index
+            break
+    if footer is None:
+        return None
+
+    separator = footer - 1
+    if separator < 0 or _visible(lines[separator]).strip():
+        return None
+
+    prompt_indices = [
+        index for index in range(separator) if _visible(lines[index]).startswith("›")
+    ]
+    if not prompt_indices:
+        return None
+    prompt = prompt_indices[-1]
+    region = lines[prompt:separator]
+    if any(_visible(line).startswith("›") for line in region[1:]):
+        return None
+
+    first = _remove_prompt_separator(region[0], "›")
+    if first is None:
+        return None
+    text_lines = [first[0]]
+    has_dim = first[1]
+    has_non_dim = first[2]
+    for line in region[1:]:
+        continuation = _continuation(line)
+        if continuation is None:
+            return None
+        text_lines.append(continuation[0])
+        has_dim = has_dim or continuation[1]
+        has_non_dim = has_non_dim or continuation[2]
+    return Composer("codex", "\n".join(text_lines), has_dim, has_non_dim)
 
 
-def _exact_remainder_after_prompt(raw_line: str) -> str | None:
-    annotated = _visible_with_dim(raw_line)
-    for index, (char, _) in enumerate(annotated):
-        if char not in PROMPTS:
-            continue
-        remainder = "".join(value for value, _ in annotated[index + 1 :])
-        if remainder.startswith((" ", "\u00a0")):
-            remainder = remainder[1:]
-        return remainder
-    return None
+def _composer(lines: list[str], pane_width: int | None) -> Composer | None:
+    return _claude_composer(lines, pane_width) or _codex_composer(lines)
 
 
-def _known_empty_placeholder(text: str) -> bool:
-    return any(pattern.fullmatch(text) for pattern in KNOWN_EMPTY_PLACEHOLDERS)
-
-
-def classify_capture(raw: str) -> str:
-    """Classify an ANSI-preserving ``tmux capture-pane -pe`` result."""
+def classify_capture(raw: str, pane_width: int | None = None) -> str:
+    """Classify an ANSI-preserving capture without exposing its contents."""
     lines = raw.splitlines()
     if not lines:
         return UNKNOWN
     if _is_dialog(lines):
         return DIALOG
-
-    candidate = _prompt_candidate(lines)
-    if candidate is None:
-        if _active_without_composer(lines):
-            return CLEAR
+    composer = _composer(lines, pane_width)
+    if composer is None:
         return UNKNOWN
-    prompt_index, prompt_line = candidate
-    remainder, annotated = _remainder_after_prompt(prompt_line)
-
-    if remainder:
-        nonspace = [(char, dim) for char, dim in annotated if not char.isspace()]
-        if nonspace and all(dim for _, dim in nonspace):
-            return CLEAR
-        if _known_empty_placeholder(remainder):
-            return CLEAR
-        return OCCUPIED
-
-    # A leading newline can leave the prompt row empty while draft text occupies
-    # a following row. Stop at the composer's lower border; anything visible
-    # before it is user input and therefore occupied.
-    for line in lines[prompt_index + 1 :]:
-        visible = _visible(line).strip()
-        if not visible:
-            continue
-        if set(visible) <= {"─", "━", "─", " ", "-"}:
-            break
-        if re.match(r"^(gpt-|⏵|⏸|\? for shortcuts)", visible, re.IGNORECASE):
-            break
-        return OCCUPIED
-    return CLEAR
+    if not composer.text.strip():
+        return CLEAR
+    if composer.has_dim_text and not composer.has_non_dim_text:
+        return CLEAR
+    return OCCUPIED
 
 
 def _tmux(
@@ -206,180 +318,322 @@ def _tmux(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
         )
     except OSError as error:
         return subprocess.CompletedProcess(command, 127, "", str(error))
 
 
-def _capture_target(target: str) -> tuple[str, str, str]:
-    capture = _tmux("capture-pane", "-p", "-e", "-J", "-t", target)
+def _server_hint() -> str:
+    tmux_environment = os.environ.get("TMUX", "")
+    return tmux_environment.split(",", 1)[0] or "default"
+
+
+def resolve_target(target: str) -> tuple[PaneIdentity | None, str, str]:
+    server = _tmux("list-sessions", "-F", "#{pid}\t#{socket_path}")
+    if server.returncode != 0:
+        return None, "server", server.stderr.strip() or "tmux server probe failed"
+
+    panes = _tmux(
+        "list-panes",
+        "-a",
+        "-F",
+        "#{session_name}\t#{window_name}\t#{window_index}\t#{pane_index}\t"
+        "#{pane_id}\t#{pane_pid}\t#{pane_width}\t#{socket_path}\t#{pid}\t"
+        "#{window_panes}",
+    )
+    if panes.returncode != 0:
+        return None, "target", panes.stderr.strip() or "tmux pane enumeration failed"
+
+    matches: list[PaneIdentity] = []
+    for line in panes.stdout.splitlines():
+        fields = line.split("\t")
+        if len(fields) != 10:
+            return None, "target", "tmux pane enumeration returned an invalid identity"
+        (
+            session_name,
+            window_name,
+            window_index,
+            pane_index,
+            pane_id,
+            pane_pid,
+            pane_width_text,
+            socket_path,
+            server_pid,
+            window_panes_text,
+        ) = fields
+        try:
+            pane_width = int(pane_width_text)
+            window_panes = int(window_panes_text)
+        except ValueError:
+            return None, "target", "tmux pane enumeration returned invalid numbers"
+        candidates = {
+            pane_id,
+            f"{session_name}:{window_name}.{pane_index}",
+            f"{session_name}:{window_index}.{pane_index}",
+        }
+        if window_panes == 1:
+            candidates.update(
+                {
+                    f"{session_name}:{window_name}",
+                    f"{session_name}:{window_index}",
+                }
+            )
+        if target in candidates:
+            matches.append(
+                PaneIdentity(
+                    pane_id,
+                    pane_pid,
+                    pane_width,
+                    socket_path,
+                    server_pid,
+                    target,
+                )
+            )
+
+    if not matches:
+        return None, "target", "no pane has that exact address"
+    if len(matches) != 1:
+        return None, "target", "the exact address is ambiguous"
+    return matches[0], "", ""
+
+
+def capture_target(pane: PaneIdentity) -> CaptureResult:
+    capture = _tmux("capture-pane", "-p", "-e", "-J", "-t", pane.pane_id)
     if capture.returncode != 0:
-        detail = capture.stderr.strip() or "tmux capture-pane failed"
-        return UNKNOWN, detail, ""
-    return classify_capture(capture.stdout), "", capture.stdout
+        return CaptureResult(
+            UNKNOWN,
+            "target",
+            capture.stderr.strip() or "resolved pane vanished before capture",
+            None,
+        )
+    state = classify_capture(capture.stdout, pane.pane_width)
+    if state == UNKNOWN:
+        return CaptureResult(UNKNOWN, "layout", "pane shape is not recognized", None)
+    return CaptureResult(
+        state,
+        "",
+        "",
+        _composer(capture.stdout.splitlines(), pane.pane_width),
+    )
 
 
-def classify_target(target: str) -> tuple[str, str]:
-    state, detail, _ = _capture_target(target)
-    return state, detail
+def _owned_message(result: CaptureResult, expected: str) -> bool:
+    return (
+        result.state == OCCUPIED
+        and result.composer is not None
+        and not result.composer.has_dim_text
+        and result.composer.text == expected
+    )
+
+
+def _wait_for_owned_message(
+    pane: PaneIdentity,
+    expected: str,
+    *,
+    sleep=time.sleep,
+) -> CaptureResult:
+    consecutive = 0
+    latest = CaptureResult(UNKNOWN, "layout", "verification did not run", None)
+    for delay in VERIFY_DELAYS_SECONDS:
+        sleep(delay)
+        latest = capture_target(pane)
+        if _owned_message(latest, expected):
+            consecutive += 1
+            if consecutive == 2:
+                return latest
+        else:
+            consecutive = 0
+    return latest
 
 
 def _wait_for_clear(
-    target: str,
+    pane: PaneIdentity,
     *,
-    clock=time.monotonic,
     sleep=time.sleep,
-) -> tuple[str, str, str]:
-    deadline = clock() + VERIFY_WINDOW_SECONDS
-    delay = INITIAL_VERIFY_DELAY_SECONDS
-    result = (UNKNOWN, "verification did not run", "")
-    while True:
-        remaining = deadline - clock()
-        if remaining <= 0:
-            return result
-        sleep(min(delay, remaining))
-        result = _capture_target(target)
-        if result[0] == CLEAR:
-            return result
-        delay *= 2
+) -> CaptureResult:
+    latest = CaptureResult(UNKNOWN, "layout", "verification did not run", None)
+    for delay in VERIFY_DELAYS_SECONDS:
+        sleep(delay)
+        latest = capture_target(pane)
+        if latest.state == CLEAR:
+            return latest
+    return latest
 
 
-def _composer_text(raw: str) -> str | None:
-    lines = raw.splitlines()
-    candidate = _prompt_candidate(lines)
-    if candidate is None:
-        return None
-    prompt_index, prompt_line = candidate
-    first_line = _exact_remainder_after_prompt(prompt_line)
-    if first_line is None:
-        return None
-    prompt_glyph = _visible(prompt_line).lstrip(" ")[0]
+def _emit_unknown(
+    kind: str,
+    target: str,
+    detail: str,
+    socket_path: str | None = None,
+) -> int:
+    print(f"{UNKNOWN} {kind}")
+    socket = socket_path or _server_hint()
+    explanations = {
+        "server": "tmux server or socket could not be reached",
+        "target": "tmux answered, but the target pane could not be resolved",
+        "layout": "pane shape is not recognized",
+        "buffer": "tmux could not prepare the message buffer",
+        "interrupted": "the sender was interrupted before paste was issued",
+        "internal": "the sender failed before paste was issued",
+    }
+    explanation = explanations.get(kind, "the sender could not proceed safely")
+    suffix = f"; tmux reported: {detail}" if detail else ""
+    print(
+        f"{UNKNOWN} {kind}: {explanation}; nothing sent "
+        f"(target {target}; socket {socket}){suffix}",
+        file=sys.stderr,
+    )
+    return EXIT_UNKNOWN
 
-    if prompt_glyph == "❯":
-        content = [first_line]
-        for line in lines[prompt_index + 1 :]:
-            if _is_horizontal_border(line):
-                return "\n".join(content)
-            content.append(_visible(line))
-        return None
 
-    # Codex leaves one blank layout row between the composer and its
-    # model/directory footer. Choose the last visible row after the prompt as
-    # that footer so prompt-like text inside the draft cannot terminate it.
-    following = lines[prompt_index + 1 :]
-    footer_index = None
-    for index in range(len(following) - 1, -1, -1):
-        if _visible(following[index]).strip():
-            footer_index = index
-            break
-    if footer_index is None or " · " not in _visible(following[footer_index]):
-        return None
-    content = [first_line] + [_visible(line) for line in following[:footer_index]]
-    if not content or content[-1].strip() != "":
-        return None
-    content.pop()
-    return "\n".join(content)
+def _emit_unverified(
+    stage: str,
+    pane: PaneIdentity | None,
+    target: str,
+    detail: str = "",
+) -> int:
+    print(f"{DELIVERY_UNVERIFIED} {stage}")
+    suffix = f"; tmux reported: {detail}" if detail else ""
+    if pane is None:
+        identity = f"target {target}; socket {_server_hint()}"
+    else:
+        identity = f"target {target}; pane {pane.pane_id}; socket {pane.socket_path}"
+    print(
+        f"{DELIVERY_UNVERIFIED} {stage}: delivery state is uncertain; do not retry "
+        f"automatically ({identity}){suffix}",
+        file=sys.stderr,
+    )
+    return EXIT_DELIVERY_UNVERIFIED
 
 
 def send_message(target: str, message_file: Path) -> int:
-    if not message_file.is_file():
-        print(f"message file is not a regular file: {message_file}", file=sys.stderr)
-        return EXIT_USAGE
-
+    pane: PaneIdentity | None = None
+    buffer_name: str | None = None
+    paste_issued = False
+    enter_issued = False
     try:
-        message = message_file.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as error:
-        print(f"could not read UTF-8 message file {message_file}: {error}", file=sys.stderr)
-        return EXIT_USAGE
+        if not message_file.is_file():
+            raise UsageError(f"message file is not a regular file: {message_file}")
+        try:
+            message = message_file.read_bytes().decode("utf-8")
+        except (OSError, UnicodeError) as error:
+            raise UsageError(
+                f"could not read UTF-8 message file {message_file}: {error}"
+            ) from error
 
-    state, detail = classify_target(target)
-    if state != CLEAR:
-        print(state)
-        if state == OCCUPIED:
-            explanation = "target composer contains unsubmitted text"
-        elif state == DIALOG:
-            explanation = "target pane is showing a dialog"
-        else:
-            explanation = "target pane state could not be recognized"
-        suffix = f"; tmux reported: {detail}" if detail else ""
-        print(
-            f"{state}: {explanation}; nothing sent (target {target}){suffix}",
-            file=sys.stderr,
-        )
-        return EXIT_BY_STATE[state]
+        pane, failure_class, detail = resolve_target(target)
+        if pane is None:
+            return _emit_unknown(failure_class, target, detail)
 
-    buffer_name = f"tmux-message-{os.getpid()}-{uuid.uuid4().hex}"
-    load = _tmux("load-buffer", "-b", buffer_name, "-", input_text=message)
-    if load.returncode != 0:
-        print(UNKNOWN)
-        print(
-            f"{UNKNOWN}: message buffer could not be prepared; nothing sent "
-            f"(target {target}); tmux reported: {load.stderr.strip()}",
-            file=sys.stderr,
-        )
-        return EXIT_BY_STATE[UNKNOWN]
-
-    paste = _tmux("paste-buffer", "-p", "-r", "-d", "-b", buffer_name, "-t", target)
-    if paste.returncode != 0:
-        _tmux("delete-buffer", "-b", buffer_name)
-        print(DELIVERY_UNVERIFIED)
-        print(
-            f"{DELIVERY_UNVERIFIED}: paste command failed; do not retry automatically "
-            f"(target {target}); tmux reported: {paste.stderr.strip()}",
-            file=sys.stderr,
-        )
-        return EXIT_DELIVERY_FAILED
-
-    time.sleep(0.05)
-    submit = _tmux("send-keys", "-t", target, "Enter")
-    if submit.returncode != 0:
-        print(DELIVERY_UNVERIFIED)
-        print(
-            f"{DELIVERY_UNVERIFIED}: message was pasted but Enter failed; do not retry "
-            f"automatically (target {target}); tmux reported: {submit.stderr.strip()}",
-            file=sys.stderr,
-        )
-        return EXIT_DELIVERY_FAILED
-
-    post_state, post_detail, post_capture = _wait_for_clear(target)
-    if post_state == OCCUPIED and _composer_text(post_capture) == message:
-        submit_again = _tmux("send-keys", "-t", target, "Enter")
-        if submit_again.returncode != 0:
-            print(DELIVERY_UNVERIFIED)
+        initial = capture_target(pane)
+        if initial.state == OCCUPIED:
+            print(OCCUPIED)
             print(
-                f"{DELIVERY_UNVERIFIED}: the exact pasted message remained, but the "
-                f"single recovery Enter failed; do not retry automatically (target "
-                f"{target}); tmux reported: {submit_again.stderr.strip()}",
+                f"{OCCUPIED}: target composer contains unsubmitted text; nothing sent. "
+                "Messages are not assumed idempotent: do not inspect-and-retry an "
+                f"ordinary message (target {target}; pane {pane.pane_id})",
                 file=sys.stderr,
             )
-            return EXIT_DELIVERY_FAILED
-        post_state, post_detail, _ = _wait_for_clear(target)
-    if post_state != CLEAR:
-        print(DELIVERY_UNVERIFIED)
-        suffix = f"; tmux reported: {post_detail}" if post_detail else ""
-        print(
-            f"{DELIVERY_UNVERIFIED}: message was pasted and Enter was sent, but "
-            f"post-send pane state is {post_state}; do not retry automatically "
-            f"(target {target}){suffix}",
-            file=sys.stderr,
+            return EXIT_OCCUPIED
+        if initial.state == DIALOG:
+            print(DIALOG)
+            print(
+                f"{DIALOG}: target pane is showing a dialog; nothing sent "
+                f"(target {target}; pane {pane.pane_id})",
+                file=sys.stderr,
+            )
+            return EXIT_DIALOG
+        if initial.state == UNKNOWN:
+            return _emit_unknown(
+                initial.detail_class or "layout",
+                target,
+                initial.detail,
+                pane.socket_path,
+            )
+
+        buffer_name = f"tmux-message-{os.getpid()}-{uuid.uuid4().hex}"
+        load = _tmux("load-buffer", "-b", buffer_name, "-", input_text=message)
+        if load.returncode != 0:
+            return _emit_unknown("buffer", target, load.stderr.strip(), pane.socket_path)
+
+        paste_issued = True
+        paste = _tmux(
+            "paste-buffer",
+            "-p",
+            "-r",
+            "-d",
+            "-b",
+            buffer_name,
+            "-t",
+            pane.pane_id,
         )
-        return EXIT_DELIVERY_FAILED
-    print(SENT)
-    return 0
+        if paste.returncode != 0:
+            _tmux("delete-buffer", "-b", buffer_name)
+            buffer_name = None
+            return _emit_unverified("paste-failed", pane, target, paste.stderr.strip())
+        buffer_name = None
+
+        observed = _wait_for_owned_message(pane, message)
+        if not _owned_message(observed, message):
+            return _emit_unverified(
+                "paste-not-observed", pane, target, observed.detail
+            )
+
+        enter_issued = True
+        submit = _tmux("send-keys", "-t", pane.pane_id, "Enter")
+        if submit.returncode != 0:
+            return _emit_unverified("enter-failed", pane, target, submit.stderr.strip())
+
+        cleared = _wait_for_clear(pane)
+        if cleared.state != CLEAR:
+            return _emit_unverified("not-cleared", pane, target, cleared.detail)
+        print(SENT)
+        return 0
+    except UsageError:
+        raise
+    except (KeyboardInterrupt, SignalInterruption) as error:
+        if buffer_name is not None:
+            _tmux("delete-buffer", "-b", buffer_name)
+        if paste_issued:
+            stage = "interrupted-after-enter" if enter_issued else "interrupted-before-enter"
+            return _emit_unverified(stage, pane, target, type(error).__name__)
+        return _emit_unknown("interrupted", target, type(error).__name__)
+    except Exception as error:
+        if buffer_name is not None:
+            _tmux("delete-buffer", "-b", buffer_name)
+        if paste_issued:
+            return _emit_unverified("internal-error", pane, target, type(error).__name__)
+        return _emit_unknown("internal", target, type(error).__name__)
 
 
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Send a message to a tmux agent composer only when it is clear."
+def _parser() -> Parser:
+    parser = Parser(
+        description="Send one non-idempotent message only through a verified clear composer."
     )
     parser.add_argument("target", help="tmux target, such as session:window.pane")
     parser.add_argument("message_file", type=Path)
     return parser
 
 
-def main() -> int:
-    args = _parser().parse_args()
-    return send_message(args.target, args.message_file)
+def _raise_signal(signal_number: int, _frame: object) -> None:
+    raise SignalInterruption(signal_number)
+
+
+def main(argv: list[str] | None = None) -> int:
+    previous_handlers: dict[signal.Signals, object] = {}
+    try:
+        args = _parser().parse_args(argv)
+        for signal_number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            previous_handlers[signal_number] = signal.getsignal(signal_number)
+            signal.signal(signal_number, _raise_signal)
+        return send_message(args.target, args.message_file)
+    except UsageError as error:
+        print(f"usage error: {error}", file=sys.stderr)
+        return EXIT_USAGE
+    finally:
+        for signal_number, handler in previous_handlers.items():
+            signal.signal(signal_number, handler)
 
 
 if __name__ == "__main__":
