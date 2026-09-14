@@ -27,8 +27,9 @@ Choose the communication channel before sizing the handoff:
   after the launch; two-way communication requires both sessions to receive. For
   every successful send or reply, inspect `recipient_waiting_at_send`. A true
   result uses Relay alone. A false result leaves the payload in Relay and permits
-  one `tmux-message` wake notice containing only the Relay message ID and an
-  instruction to process the inbox and restore exactly one listener. If no tmux
+  one wake notice, sent through the `agent-relay-message` wake helper, containing
+  only the Relay message ID and an instruction to process the inbox and restore
+  exactly one listener. If no tmux
   path reaches the recipient, report that the message is queued but active
   wake-up is unverified. Never resend the payload after an ambiguous Relay
   result.
@@ -293,10 +294,11 @@ or think to ask about, and let the reply channel handle the rest.
       reply_to_message for responses, and send blockers, clarification requests,
       and completion notices to <parent-slug>. Replace the listener after
       handling its complete result. After every successful send or reply, inspect
-      recipient_waiting_at_send. If true, use no tmux message. If false, invoke
-      tmux-message and send <recipient-pane> only a wake notice containing the
-      Relay message ID and an instruction to process the Relay inbox and restore
-      exactly one listener; never copy the actionable payload into the notice.
+      recipient_waiting_at_send. If true, use no tmux message. If false, use the
+      agent-relay-message wake helper to send <recipient-pane> only a wake notice
+      containing the Relay message ID and an instruction to process the Relay
+      inbox and restore exactly one listener; never copy the actionable payload
+      into the notice.
       The recovery pane addresses are <parent-pane> and <child-pane>. If a pane
       is unreachable, report that Relay queued the message but active wake-up is
       unverified. Never resend through tmux after an ambiguous Relay result.
