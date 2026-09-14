@@ -155,8 +155,12 @@ make delivery possible.
 
 - `UNKNOWN server`: correct the tmux socket or server selection before another
   attempt. Do not back off blindly.
-- `UNKNOWN target`: re-resolve the window by stable name once. If it remains
-  absent, escalate rather than guessing another pane.
+- `UNKNOWN target`: a tmux listing to re-resolve the window by stable name is
+  permitted only when inspection is allowed and the target window appears to
+  have moved; list once. If either condition fails, or the window remains
+  absent, escalate rather than guessing another pane. This condition covers
+  recovery from this result only; it does not restrict how other workflows
+  obtain an address in the first place.
 - `UNKNOWN layout`: retain the message and wait for a recognized composer. Do
   not loosen the classifier from one unfamiliar capture.
 - `UNKNOWN buffer`, `UNKNOWN interrupted`, or `UNKNOWN internal`: fix or report
