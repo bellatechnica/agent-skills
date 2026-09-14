@@ -138,8 +138,9 @@ The script owns the sequence that callers previously had to reproduce:
 - Verification waits on an exponential schedule of 50, 100, 200, 400, 800,
   and 1600 ms. If the entire composer still equals the message file after that
   3.15-second window, the script sends the one permitted recovery Enter and
-  verifies for one more 3.15-second window. Different or mixed text never
-  receives another key.
+  verifies for one more 3.15-second window. Whole-value equality is the safety
+  guard: the recovery can submit only the sender's own payload. A prefix,
+  substring, or mixed-text match must never receive another key.
 - It never sends Esc, `C-u`, or any other command that clears or cancels state.
 
 Bracketed paste is required for Codex. `send-keys -l` can trigger its
