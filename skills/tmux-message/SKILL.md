@@ -141,9 +141,9 @@ Enter may still be pending. The interrupted-send exception deliberately leaves
 the final judgment and the capture-to-Enter race with the caller; it must not be
 used when that tradeoff is unacceptable.
 
-The `agent-relay-message` skill defines a separate caller-side exception for an
-already occupied, complete Relay wake notice. Wake notices are idempotent; normal
-messages are not.
+The `agent-relay-message` helper performs a separate automatic exception for an
+already occupied, complete Relay wake notice. Wake notices are idempotent;
+normal messages are not.
 
 ### `DIALOG`
 
