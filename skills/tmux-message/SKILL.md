@@ -125,16 +125,27 @@ files with a glob.
 
 ## Respond to a result
 
+For `OCCUPIED`, `DIALOG`, or `UNKNOWN layout`, retain the exact message source
+and retry the same guarded command after roughly 5 seconds, 15 seconds, 45
+seconds, and 2 minutes. Each invocation classifies the pane again immediately
+before any paste, so it sends only after the pane becomes safe. Stop the schedule
+on `SENT` or any result other than `OCCUPIED`, `DIALOG`, or `UNKNOWN layout`. If
+all four retries still refuse, postpone the message and start the same schedule
+again at the caller's next natural work turn or after an external notification;
+escalate only when delivery blocks progress.
+
+Both the timed and postponed retries are permitted only when no attempt of that
+same retained message, before or during the schedule, returned
+`DELIVERY_UNVERIFIED`, produced no result token, or produced a token/status
+disagreement. A message with any such attempt in its history never re-enters
+either retry; only the interrupted-send exception below may act on it.
+
 ### `OCCUPIED`
 
-Do not directly inspect and then retry an ordinary message, even when direct
-inspection is allowed. The composer might hold an earlier copy whose submission
-would make a later retry a duplicate. Do not press Enter, paste, clear, or poll
-for a change. Retain the message file and postpone or escalate the delivery. A
-later normal invocation is permitted at the caller's next natural work turn or
-after an external notification, but only when no earlier attempt of that same
-retained message returned `DELIVERY_UNVERIFIED` or produced no token. This is
-not a timer-driven retry loop.
+Do not directly inspect, press Enter, paste, or clear the ordinary draft. Unless
+the interrupted-send exception below applies, let the guarded retry schedule
+reclassify the pane and send only after the operator or target session
+independently clears the composer.
 
 One caller-side exception exists only after a new invocation returns `OCCUPIED`
 and that caller's immediately preceding attempt of the same retained message
@@ -159,8 +170,8 @@ normal messages are not.
 
 ### `DIALOG`
 
-Send no key, including Esc. The operator owns the dialog. A later invocation is
-allowed only after the operator independently closes it; do not dismiss it to
+Send no key, including Esc. The operator owns the dialog. Let the guarded retry
+schedule detect when the operator independently closes it; do not dismiss it to
 make delivery possible.
 
 ### `UNKNOWN`
@@ -174,7 +185,9 @@ make delivery possible.
   recovery from this result only; it does not restrict how other workflows
   obtain an address in the first place.
 - `UNKNOWN layout`: retain the message and wait for a recognized composer. Do
-  not loosen the classifier from one unfamiliar capture.
+  not loosen the classifier from one unfamiliar capture. Let the guarded retry
+  schedule detect whether a transient client screen returns to a recognized
+  composer.
 - `UNKNOWN buffer`, `UNKNOWN interrupted`, or `UNKNOWN internal`: fix or report
   the stated local failure before retrying.
 
