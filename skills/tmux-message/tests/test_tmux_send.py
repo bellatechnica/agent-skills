@@ -33,6 +33,20 @@ def claude_capture(first: str = "", *continuations: str) -> str:
     return "\n".join(rows) + "\n"
 
 
+def claude_capture_with_background_agents(
+    first: str = "", *, agent_count: int, viewed_agent: int | None = None
+) -> str:
+    rows = claude_capture(first).splitlines()
+    main_marker = "●" if viewed_agent is None else "◯"
+    rows.extend(["", f"  {main_marker} main"])
+    rows.extend(
+        f"  {'●' if viewed_agent == index else '◯'} general-purpose-{index}"
+        "  Waiting for messages"
+        for index in range(agent_count)
+    )
+    return "\n".join(rows) + "\n"
+
+
 def codex_capture(first: str = "", *continuations: str) -> str:
     rows = [f"› {first}"]
     rows.extend(f"  {row}" for row in continuations)
@@ -157,6 +171,71 @@ class ClassifyCaptureTests(unittest.TestCase):
 
     def test_claude_bare_prompt_is_clear(self) -> None:
         self.assertEqual(tmux_send.classify_capture(claude_capture(), WIDTH), "CLEAR")
+
+    def test_claude_background_agent_panel_accepts_clear_composer(self) -> None:
+        for agent_count in (1, 3):
+            with self.subTest(agent_count=agent_count):
+                capture = claude_capture_with_background_agents(
+                    agent_count=agent_count
+                )
+                self.assertEqual(
+                    tmux_send.classify_capture(capture, WIDTH, 2, 1),
+                    "CLEAR",
+                )
+
+    def test_claude_background_agent_panel_keeps_draft_occupied(self) -> None:
+        capture = claude_capture_with_background_agents(
+            "review this branch", agent_count=2
+        )
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, 20, 1),
+            "OCCUPIED",
+        )
+
+    def test_claude_background_agent_panel_requires_composer_cursor(self) -> None:
+        capture = claude_capture_with_background_agents(agent_count=2)
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH),
+            "UNKNOWN",
+        )
+
+    def test_claude_background_agent_panel_rejects_subagent_view(self) -> None:
+        capture = claude_capture_with_background_agents(
+            "\x1b[2mMessage @general-purpose-0…\x1b[0m",
+            agent_count=2,
+            viewed_agent=0,
+        )
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, 2, 1),
+            "UNKNOWN",
+        )
+
+    def test_claude_background_agent_panel_requires_exactly_main_selected(self) -> None:
+        capture = claude_capture_with_background_agents(agent_count=2)
+        no_selection = capture.replace("  ● main", "  ◯ main")
+        two_selections = capture.replace(
+            "  ◯ general-purpose-0", "  ● general-purpose-0"
+        )
+        for malformed in (no_selection, two_selections):
+            with self.subTest(capture=malformed):
+                self.assertEqual(
+                    tmux_send.classify_capture(malformed, WIDTH, 2, 1),
+                    "UNKNOWN",
+                )
+
+    def test_claude_background_agent_panel_rejects_agent_placeholder_on_main(self) -> None:
+        capture = claude_capture_with_background_agents(
+            "\x1b[2mMessage @general-purpose-0…\x1b[0m",
+            agent_count=2,
+        )
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, 2, 1),
+            "UNKNOWN",
+        )
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, 2, 5),
+            "UNKNOWN",
+        )
 
     def test_agy_bare_prompt_is_clear(self) -> None:
         self.assertEqual(tmux_send.classify_capture(agy_capture(), WIDTH), "CLEAR")
@@ -398,6 +477,18 @@ class CaptureTargetTests(unittest.TestCase):
             actual = tmux_send.capture_target(pane())
         self.assertEqual(actual.state, "CLEAR")
         self.assertEqual(actual.composer.client, "opencode")
+        self.assertEqual(call.call_args_list[1].args[0], "display-message")
+
+    def test_claude_background_agent_panel_queries_cursor(self) -> None:
+        capture = claude_capture_with_background_agents(agent_count=3)
+        responses = (
+            self.completed(capture),
+            self.completed("2\t1\n"),
+        )
+        with mock.patch.object(tmux_send, "_tmux", side_effect=responses) as call:
+            actual = tmux_send.capture_target(pane())
+        self.assertEqual(actual.state, "CLEAR")
+        self.assertEqual(actual.composer.client, "claude")
         self.assertEqual(call.call_args_list[1].args[0], "display-message")
 
     def test_opencode_invalid_cursor_position_fails_closed(self) -> None:
@@ -766,6 +857,17 @@ class OutputContractTests(unittest.TestCase):
         code, stdout, stderr, tmux_call = self.invoke(initial=initial)
         self.assertEqual((code, stdout), (3, "UNKNOWN layout\n"))
         self.assertIn("pane shape", stderr)
+        self.assertEqual(tmux_call.call_count, 0)
+
+    def test_claude_subagent_view_refuses_before_buffer_load(self) -> None:
+        raw = claude_capture_with_background_agents(
+            "\x1b[2mMessage @general-purpose-0…\x1b[0m",
+            agent_count=2,
+            viewed_agent=0,
+        )
+        state = tmux_send.classify_capture(raw, WIDTH, 2, 1)
+        code, stdout, _stderr, tmux_call = self.invoke(initial=result(state))
+        self.assertEqual((code, stdout), (3, "UNKNOWN layout\n"))
         self.assertEqual(tmux_call.call_count, 0)
 
     def test_server_and_target_unknown_name_class(self) -> None:

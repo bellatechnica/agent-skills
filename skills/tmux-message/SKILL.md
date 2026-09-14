@@ -176,6 +176,12 @@ make delivery possible.
 
 ### `UNKNOWN`
 
+Read-only direct inspection is allowed unless separately disallowed. For
+`UNKNOWN layout`, it may distinguish a transient client screen from a newly
+unsupported shape. Inspection does not authorize typing, bypassing the guarded
+sender, or relabeling the result. Never include pane contents in a report,
+record, or Relay message.
+
 - `UNKNOWN server`: correct the tmux socket or server selection before another
   attempt. Do not back off blindly.
 - `UNKNOWN target`: a tmux listing to re-resolve the window by stable name is
@@ -228,7 +234,13 @@ composer regions. The Antigravity CLI 1.1.27 and OpenCode 1.18.31 shapes were
 live-checked on 2026-09-14:
 
 - Claude Code requires full-width top and bottom borders and one column-zero
-  `❯` prompt inside them, followed immediately by its bottom status row.
+  `❯` prompt inside them, with its normal status row immediately after the
+  bottom border. When one or more background subagents add a status panel below
+  that row, the cursor must be inside the recognized composer, exactly one panel
+  row must carry the selected marker, and that row must be `main`. A composer
+  beginning with the client-native `Message @` agent placeholder is never
+  accepted in this shape. Arbitrary later content without all of that evidence
+  still fails closed.
 - Codex requires one column-zero `›` prompt followed by its structural spacer
   and bottommost footer. The footer is either the model/directory summary or
   the full-width, entirely dim editing status line used while a draft is

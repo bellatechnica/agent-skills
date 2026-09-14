@@ -39,6 +39,9 @@ OSC_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)")
 SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
 CODEX_FOOTER_RE = re.compile(r"^  \S.* · \S")
 CLAUDE_FOOTER_RE = re.compile(r"^  ⏵⏵ \S")
+CLAUDE_SELECTED_PANEL_RE = re.compile(r"^\s*●(?:\s|$)")
+CLAUDE_MAIN_SELECTED_RE = re.compile(r"^\s*●\s+main(?:\s|$)")
+CLAUDE_AGENT_MESSAGE_RE = re.compile(r"^Message @")
 AGY_FOOTER_RE = re.compile(r".*\S · (?:low|medium|high)$", re.IGNORECASE)
 CLAUDE_PASTE_PLACEHOLDER_RE = re.compile(
     r"\[(?:Pasted text #\d+(?: \+\d+ lines)?|\.\.\.Truncated text #\d+ \+\d+ lines\.\.\.)\]"
@@ -116,6 +119,13 @@ class OpenCodeRegion:
     bottom: int
     left: int
     right: int
+
+
+@dataclass(frozen=True)
+class ClaudeRegion:
+    top: int
+    bottom: int
+    trailing_panel: tuple[str, ...]
 
 
 def _visible(raw: str) -> str:
@@ -245,7 +255,9 @@ def _continuation(
     return text, has_dim, has_non_dim
 
 
-def _claude_composer(lines: list[str], pane_width: int | None) -> Composer | None:
+def _claude_region(
+    lines: list[str], pane_width: int | None
+) -> ClaudeRegion | None:
     bottom = None
     for index in range(len(lines) - 1, -1, -1):
         if _is_plain_full_width_border(lines[index], pane_width):
@@ -257,9 +269,7 @@ def _claude_composer(lines: list[str], pane_width: int | None) -> Composer | Non
     trailing_nonblank = [
         _visible(line).rstrip() for line in lines[bottom + 1 :] if _visible(line).strip()
     ]
-    if len(trailing_nonblank) != 1 or not CLAUDE_FOOTER_RE.match(
-        trailing_nonblank[0]
-    ):
+    if not trailing_nonblank or not CLAUDE_FOOTER_RE.match(trailing_nonblank[0]):
         return None
 
     top = None
@@ -270,7 +280,29 @@ def _claude_composer(lines: list[str], pane_width: int | None) -> Composer | Non
     if top is None:
         return None
 
-    region = lines[top + 1 : bottom]
+    return ClaudeRegion(top, bottom, tuple(trailing_nonblank[1:]))
+
+
+def _claude_composer(
+    lines: list[str],
+    pane_width: int | None,
+    cursor_y: int | None = None,
+) -> Composer | None:
+    bounds = _claude_region(lines, pane_width)
+    if bounds is None:
+        return None
+    if bounds.trailing_panel:
+        if not (cursor_y is not None and bounds.top < cursor_y < bounds.bottom):
+            return None
+        selected_rows = [
+            row for row in bounds.trailing_panel if CLAUDE_SELECTED_PANEL_RE.match(row)
+        ]
+        if len(selected_rows) != 1 or not CLAUDE_MAIN_SELECTED_RE.match(
+            selected_rows[0]
+        ):
+            return None
+
+    region = lines[bounds.top + 1 : bounds.bottom]
     prompt_indices = [
         index for index, line in enumerate(region) if _visible(line).startswith("❯")
     ]
@@ -294,7 +326,10 @@ def _claude_composer(lines: list[str], pane_width: int | None) -> Composer | Non
         text_lines.append(continuation[0])
         has_dim = has_dim or continuation[1]
         has_non_dim = has_non_dim or continuation[2]
-    return Composer("claude", "\n".join(text_lines), has_dim, has_non_dim)
+    text = "\n".join(text_lines)
+    if bounds.trailing_panel and CLAUDE_AGENT_MESSAGE_RE.match(text):
+        return None
+    return Composer("claude", text, has_dim, has_non_dim)
 
 
 def _agy_composer(lines: list[str], pane_width: int | None) -> Composer | None:
@@ -524,7 +559,7 @@ def _composer(
     cursor_y: int | None = None,
 ) -> Composer | None:
     return (
-        _claude_composer(lines, pane_width)
+        _claude_composer(lines, pane_width, cursor_y)
         or _agy_composer(lines, pane_width)
         or _codex_composer(lines, pane_width)
         or _opencode_composer(lines, cursor_x, cursor_y)
@@ -673,7 +708,10 @@ def capture_target(pane: PaneIdentity) -> CaptureResult:
     lines = capture.stdout.splitlines()
     cursor_x = None
     cursor_y = None
-    if _opencode_region(lines) is not None:
+    claude_region = _claude_region(lines, pane.pane_width)
+    if _opencode_region(lines) is not None or (
+        claude_region is not None and claude_region.trailing_panel
+    ):
         cursor = _tmux(
             "display-message",
             "-p",
