@@ -57,6 +57,11 @@ Do not rewrite or truncate a message for transport. Avoid command substitution,
 JSON serialization, or shell interpolation that changes real LF characters or
 interprets message text.
 
+The sender refuses an empty or whitespace-only message. It also refuses every
+Unicode control character except line feed (`LF`) before resolving or mutating
+a tmux target. In particular, an embedded escape character could otherwise end
+bracketed paste early and turn the remaining bytes into live keystrokes.
+
 ## Invoke the guarded sender
 
 Resolve the script path relative to this `SKILL.md`, then run:
@@ -89,7 +94,8 @@ is decided. Some failures add a stable class or stage after it:
   have reached the pane, but the result is uncertain. Stages are exactly
   `paste-failed`, `paste-not-observed`, `enter-failed`, `not-cleared`,
   `interrupted-before-enter`, `interrupted-after-enter`, and `internal-error`.
-- Exit `64`: invalid arguments or message file; nothing was sent.
+- Exit `64`: invalid arguments, message source, or message content; nothing was
+  sent.
 
 Exit `0` is reserved for `SENT`; `--help` is an invocation result and exits 64.
 The token and exit status must agree. A missing token, multiple tokens, or any
@@ -201,18 +207,21 @@ It recognizes only anchored Claude Code and Codex composer regions:
 - Any dialog marker, mixed plain-plus-dim text, malformed region, or absent
   composer fails closed as `DIALOG`, `OCCUPIED`, or `UNKNOWN layout`.
 
-Before Enter, the script waits until one capture shows any recognized non-empty
-composer after the successful paste command. Visible text, soft-wrapped text,
-and a client-native opaque paste placeholder all establish that the client has
-processed input after the paste. A stale clear frame does not. If every capture
-in the 3.15-second window remains clear or unrecognized, the script produces
-`DELIVERY_UNVERIFIED paste-not-observed` and sends no Enter.
+Before Enter, the script waits until one capture shows plain non-empty composer
+text or a client-native opaque paste placeholder after the successful paste
+command. A changed all-dim suggestion is still `CLEAR` and does not establish
+that the paste was processed. The only all-dim text accepted as processing
+evidence must full-match the native Claude Code `Pasted text` or `Truncated
+text` placeholder, or the native Codex `Pasted Content` placeholder. A stale
+clear frame does not qualify. If every capture in the 3.15-second window stays
+clear or unrecognized, the script produces `DELIVERY_UNVERIFIED
+paste-not-observed` and sends no Enter.
 
 After one Enter, the script polls on the approved exponential schedule of 50,
-100, 200, 400, 800, and 1600 ms. `SENT` requires the previously observed
-non-empty composer to become `CLEAR`. It never sends a recovery Enter. A stale
-clear frame before the processed-paste observation cannot satisfy this
-transition.
+100, 200, 400, 800, and 1600 ms. `SENT` requires a non-placeholder `CLEAR`
+composer different from the processed-paste observation. It never sends a
+recovery Enter. The same dim placeholder or suggestion cannot satisfy both
+halves of the transition.
 
 Bracketed paste is required for Codex. Literal `send-keys` can trigger its
 paste-burst detector and strand raw text or a `[Pasted Content ...]` placeholder.

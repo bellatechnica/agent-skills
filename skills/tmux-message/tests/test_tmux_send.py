@@ -6,6 +6,7 @@ import contextlib
 import importlib.util
 import io
 from pathlib import Path
+import signal
 import sys
 import unittest
 from unittest import mock
@@ -48,6 +49,13 @@ def owned(text: str = "message\n") -> object:
     return result(
         tmux_send.OCCUPIED,
         tmux_send.Composer("codex", text, False, True),
+    )
+
+
+def cleared(client: str = "codex") -> object:
+    return result(
+        tmux_send.CLEAR,
+        tmux_send.Composer(client, "", False, False),
     )
 
 
@@ -291,11 +299,40 @@ class VerificationTests(unittest.TestCase):
         after = tmux_send.Composer("codex", "[Pasted Content 100 chars]", True, False)
         self.assertTrue(tmux_send._paste_processed(result("CLEAR", after), before))
 
+    def test_changed_dim_suggestion_does_not_prove_processing(self) -> None:
+        before = tmux_send.Composer("codex", "Ask Codex", True, False)
+        after = tmux_send.Composer("codex", "Try another prompt", True, False)
+        self.assertFalse(tmux_send._paste_processed(result("CLEAR", after), before))
+
+    def test_native_placeholders_are_client_specific(self) -> None:
+        placeholders = (
+            tmux_send.Composer("codex", "[Pasted Content 100 chars]", True, False),
+            tmux_send.Composer("claude", "[Pasted text #1 +2 lines]", True, False),
+            tmux_send.Composer(
+                "claude", "[...Truncated text #2 +7 lines...]", True, False
+            ),
+        )
+        for composer in placeholders:
+            with self.subTest(client=composer.client, text=composer.text):
+                self.assertTrue(tmux_send._is_native_paste_placeholder(composer))
+
+    def test_dim_placeholder_cannot_also_prove_submit_clear(self) -> None:
+        placeholder = result(
+            "CLEAR",
+            tmux_send.Composer(
+                "codex", "[Pasted Content 100 chars]", True, False
+            ),
+        )
+        self.assertFalse(tmux_send._submit_cleared(placeholder, placeholder))
+
     def test_clear_wait_uses_exponential_schedule(self) -> None:
-        sequence = [owned() for _ in range(5)] + [result("CLEAR")]
+        processed = owned()
+        sequence = [owned() for _ in range(5)] + [cleared()]
         delays = []
         with mock.patch.object(tmux_send, "capture_target", side_effect=sequence):
-            actual = tmux_send._wait_for_clear(pane(), sleep=delays.append)
+            actual = tmux_send._wait_for_clear(
+                pane(), processed, sleep=delays.append
+            )
         self.assertEqual(actual.state, "CLEAR")
         self.assertEqual(delays, list(tmux_send.VERIFY_DELAYS_SECONDS))
 
@@ -335,7 +372,7 @@ class OutputContractTests(unittest.TestCase):
             mock.patch.object(
                 tmux_send,
                 "_wait_for_clear",
-                return_value=clear_result or result("CLEAR"),
+                return_value=clear_result or cleared(),
             ),
             contextlib.redirect_stdout(stdout),
             contextlib.redirect_stderr(stderr),
@@ -351,8 +388,8 @@ class OutputContractTests(unittest.TestCase):
         self.assertEqual(send_keys[0].args[-1], "Enter")
         self.assertEqual(send_keys[0].args[-2], "%7")
 
-    def test_message_newline_bytes_are_not_translated(self) -> None:
-        message = "first\r\nsecond\r"
+    def test_message_lf_bytes_are_not_translated(self) -> None:
+        message = "first\nsecond\n"
         stdout = io.StringIO()
         okay = self.completed()
         with (
@@ -363,7 +400,7 @@ class OutputContractTests(unittest.TestCase):
                 "_wait_for_processed_paste",
                 return_value=owned(message),
             ),
-            mock.patch.object(tmux_send, "_wait_for_clear", return_value=result("CLEAR")),
+            mock.patch.object(tmux_send, "_wait_for_clear", return_value=cleared()),
             mock.patch.object(tmux_send, "_tmux", return_value=okay) as tmux_call,
             contextlib.redirect_stdout(stdout),
             contextlib.redirect_stderr(io.StringIO()),
@@ -386,7 +423,7 @@ class OutputContractTests(unittest.TestCase):
                 "_wait_for_processed_paste",
                 return_value=owned(message),
             ),
-            mock.patch.object(tmux_send, "_wait_for_clear", return_value=result("CLEAR")),
+            mock.patch.object(tmux_send, "_wait_for_clear", return_value=cleared()),
             mock.patch.object(tmux_send, "_tmux", return_value=okay) as tmux_call,
             contextlib.redirect_stdout(stdout),
             contextlib.redirect_stderr(io.StringIO()),
@@ -413,7 +450,7 @@ class OutputContractTests(unittest.TestCase):
                 "_wait_for_processed_paste",
                 return_value=owned(message),
             ),
-            mock.patch.object(tmux_send, "_wait_for_clear", return_value=result("CLEAR")),
+            mock.patch.object(tmux_send, "_wait_for_clear", return_value=cleared()),
             mock.patch.object(tmux_send, "_tmux", return_value=okay) as tmux_call,
             contextlib.redirect_stdout(stdout),
             contextlib.redirect_stderr(io.StringIO()),
@@ -426,6 +463,36 @@ class OutputContractTests(unittest.TestCase):
         self.assertEqual((code, stdout.getvalue()), (0, "SENT\n"))
         self.assertEqual(len(load), 1)
         self.assertEqual(load[0].kwargs["input_text"], message)
+
+    def test_bracketed_paste_terminator_is_refused_before_tmux(self) -> None:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(tmux_send, "resolve_target") as resolve,
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(stderr),
+        ):
+            code = tmux_send.main(
+                ["s:w.0", "--shell-safe-text", "A\x1b[201~B"]
+            )
+        self.assertEqual(code, 64)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("control character", stderr.getvalue())
+        resolve.assert_not_called()
+
+    def test_empty_and_whitespace_only_messages_are_refused_before_tmux(self) -> None:
+        for message in ("", "  \n"):
+            with self.subTest(message=repr(message)):
+                with (
+                    mock.patch.object(tmux_send, "resolve_target") as resolve,
+                    contextlib.redirect_stdout(io.StringIO()),
+                    contextlib.redirect_stderr(io.StringIO()),
+                ):
+                    code = tmux_send.main(
+                        ["s:w.0", "--shell-safe-text", message]
+                    )
+                self.assertEqual(code, 64)
+                resolve.assert_not_called()
 
     def test_occupied_is_non_idempotent_refusal(self) -> None:
         code, stdout, stderr, tmux_call = self.invoke(initial=owned("draft"))
@@ -521,6 +588,22 @@ class OutputContractTests(unittest.TestCase):
         self.assertEqual((code, stdout), (4, "DELIVERY_UNVERIFIED not-cleared\n"))
         self.assertEqual(len(send_keys), 1)
 
+    def test_dim_placeholder_after_dropped_enter_is_not_sent(self) -> None:
+        placeholder = result(
+            "CLEAR",
+            tmux_send.Composer(
+                "codex", "[Pasted Content 100 chars]", True, False
+            ),
+        )
+        code, stdout, _, tmux_call = self.invoke(
+            initial=cleared(),
+            processed_result=placeholder,
+            clear_result=placeholder,
+        )
+        send_keys = [call for call in tmux_call.call_args_list if call.args[0] == "send-keys"]
+        self.assertEqual((code, stdout), (4, "DELIVERY_UNVERIFIED not-cleared\n"))
+        self.assertEqual(len(send_keys), 1)
+
     def test_post_paste_interrupt_has_stable_token(self) -> None:
         okay = self.completed()
         stdout = io.StringIO()
@@ -536,6 +619,30 @@ class OutputContractTests(unittest.TestCase):
             ),
             contextlib.redirect_stdout(stdout),
             contextlib.redirect_stderr(stderr),
+        ):
+            code = tmux_send.send_message("s:w.0", self.message_path())
+        self.assertEqual(
+            (code, stdout.getvalue()),
+            (4, "DELIVERY_UNVERIFIED interrupted-before-enter\n"),
+        )
+
+    def test_second_signal_during_interrupt_cleanup_is_ignored(self) -> None:
+        okay = self.completed()
+
+        def tmux_call(*arguments, **_kwargs):
+            if arguments[0] == "paste-buffer":
+                raise KeyboardInterrupt
+            if arguments[0] == "delete-buffer":
+                tmux_send._raise_signal(signal.SIGTERM, None)
+            return okay
+
+        stdout = io.StringIO()
+        with (
+            mock.patch.object(tmux_send, "resolve_target", return_value=(pane(), "", "")),
+            mock.patch.object(tmux_send, "capture_target", return_value=result("CLEAR")),
+            mock.patch.object(tmux_send, "_tmux", side_effect=tmux_call),
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(io.StringIO()),
         ):
             code = tmux_send.send_message("s:w.0", self.message_path())
         self.assertEqual(
@@ -611,6 +718,10 @@ class OutputContractTests(unittest.TestCase):
             code = tmux_send.main(["--help"])
         self.assertEqual(code, 64)
         self.assertNotIn("SENT", stdout.getvalue())
+
+    def test_source_flags_do_not_accept_abbreviations(self) -> None:
+        with self.assertRaises(tmux_send.UsageError):
+            tmux_send._parser().parse_args(["s:w.0", "--std"])
 
     def test_signal_after_outcome_decision_is_ignored(self) -> None:
         tmux_send._OUTCOME_DECIDED = True

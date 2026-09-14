@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 from typing import BinaryIO
+import unicodedata
 import uuid
 
 
@@ -38,6 +39,10 @@ OSC_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)")
 SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
 CODEX_FOOTER_RE = re.compile(r"^  \S.* · \S")
 CLAUDE_FOOTER_RE = re.compile(r"^  ⏵⏵ \S")
+CLAUDE_PASTE_PLACEHOLDER_RE = re.compile(
+    r"\[(?:Pasted text #\d+(?: \+\d+ lines)?|\.\.\.Truncated text #\d+ \+\d+ lines\.\.\.)\]"
+)
+CODEX_PASTE_PLACEHOLDER_RE = re.compile(r"\[Pasted Content \d+ chars\]")
 DIALOG_PATTERNS = (
     re.compile(r"\benter to (?:confirm|select|submit)\b.*\besc to (?:cancel|close)\b"),
     re.compile(r"\bpress enter to (?:continue|select)\b"),
@@ -425,9 +430,31 @@ def capture_target(pane: PaneIdentity) -> CaptureResult:
 
 
 def _paste_processed(result: CaptureResult, before: Composer | None) -> bool:
-    if result.composer is None or not result.composer.text:
+    composer = result.composer
+    if composer is None or not composer.text:
         return False
-    return result.state == OCCUPIED or result.composer != before
+    if result.state == OCCUPIED:
+        return True
+    return composer != before and _is_native_paste_placeholder(composer)
+
+
+def _is_native_paste_placeholder(composer: Composer) -> bool:
+    pattern = (
+        CLAUDE_PASTE_PLACEHOLDER_RE
+        if composer.client == "claude"
+        else CODEX_PASTE_PLACEHOLDER_RE
+    )
+    return pattern.fullmatch(composer.text) is not None
+
+
+def _submit_cleared(result: CaptureResult, processed: CaptureResult) -> bool:
+    composer = result.composer
+    return (
+        result.state == CLEAR
+        and composer is not None
+        and composer != processed.composer
+        and not _is_native_paste_placeholder(composer)
+    )
 
 
 def _wait_for_processed_paste(
@@ -447,6 +474,7 @@ def _wait_for_processed_paste(
 
 def _wait_for_clear(
     pane: PaneIdentity,
+    processed: CaptureResult,
     *,
     sleep=time.sleep,
 ) -> CaptureResult:
@@ -454,9 +482,16 @@ def _wait_for_clear(
     for delay in VERIFY_DELAYS_SECONDS:
         sleep(delay)
         latest = capture_target(pane)
-        if latest.state == CLEAR:
+        if _submit_cleared(latest, processed):
             return latest
     return latest
+
+
+def _validate_message(message: str) -> None:
+    if not message.strip():
+        raise UsageError("message must contain non-whitespace text")
+    if any(char != "\n" and unicodedata.category(char) == "Cc" for char in message):
+        raise UsageError("message contains a control character other than LF")
 
 
 def _emit_unknown(
@@ -559,6 +594,8 @@ def send_message(
                 f"could not read UTF-8 message source: {error}"
             ) from error
 
+        _validate_message(message)
+
         pane, failure_class, detail = resolve_target(target)
         if pane is None:
             return _emit_unknown(failure_class, target, detail)
@@ -622,13 +659,14 @@ def send_message(
         if submit.returncode != 0:
             return _emit_unverified("enter-failed", pane, target, submit.stderr.strip())
 
-        cleared = _wait_for_clear(pane)
-        if cleared.state != CLEAR:
+        cleared = _wait_for_clear(pane, observed)
+        if not _submit_cleared(cleared, observed):
             return _emit_unverified("not-cleared", pane, target, cleared.detail)
         return _emit_token(SENT, 0)
     except UsageError:
         raise
     except (KeyboardInterrupt, SignalInterruption) as error:
+        _begin_outcome()
         if buffer_name is not None:
             _tmux("delete-buffer", "-b", buffer_name)
         if paste_issued:
@@ -636,6 +674,7 @@ def send_message(
             return _emit_unverified(stage, pane, target, type(error).__name__)
         return _emit_unknown("interrupted", target, type(error).__name__)
     except Exception as error:
+        _begin_outcome()
         if buffer_name is not None:
             _tmux("delete-buffer", "-b", buffer_name)
         if paste_issued:
@@ -645,7 +684,8 @@ def send_message(
 
 def _parser() -> Parser:
     parser = Parser(
-        description="Send one non-idempotent message only through a verified clear composer."
+        description="Send one non-idempotent message only through a verified clear composer.",
+        allow_abbrev=False,
     )
     parser.add_argument("target", help="tmux target, such as session:window.pane")
     sources = parser.add_mutually_exclusive_group(required=True)
