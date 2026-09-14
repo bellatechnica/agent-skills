@@ -78,13 +78,12 @@ class ClassifyCaptureTests(unittest.TestCase):
         capture = codex_capture("\x1b[2msuggestion\x1b[22m typed draft")
         self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "OCCUPIED")
 
-    def test_typed_prefix_plus_dim_ghost_is_occupied_but_not_owned(self) -> None:
+    def test_typed_prefix_plus_dim_ghost_is_occupied(self) -> None:
         capture = codex_capture("typed \x1b[2mghost\x1b[0m")
         self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "OCCUPIED")
         composer = tmux_send._composer(capture.splitlines(), WIDTH)
         self.assertIsNotNone(composer)
         self.assertTrue(composer.has_dim_text)
-        self.assertFalse(tmux_send._owned_message(result("OCCUPIED", composer), "typed ghost"))
 
     def test_multiline_codex_draft_is_occupied(self) -> None:
         self.assertEqual(
@@ -113,13 +112,11 @@ class ClassifyCaptureTests(unittest.TestCase):
         capture = codex_capture("notes about this:", "› message")
         composer = tmux_send._composer(capture.splitlines(), WIDTH)
         self.assertEqual(composer.text, "notes about this:\n› message")
-        self.assertFalse(tmux_send._owned_message(result("OCCUPIED", composer), "message"))
 
     def test_quoted_claude_composer_is_part_of_real_draft(self) -> None:
         capture = claude_capture("notes", BORDER, "❯ message")
         composer = tmux_send._composer(capture.splitlines(), WIDTH)
         self.assertEqual(composer.text, f"notes\n{BORDER}\n❯ message")
-        self.assertFalse(tmux_send._owned_message(result("OCCUPIED", composer), "message"))
 
     def test_prompt_glyph_inside_first_line_is_occupied(self) -> None:
         self.assertEqual(
@@ -265,29 +262,34 @@ class ResolveTargetTests(unittest.TestCase):
 
 
 class VerificationTests(unittest.TestCase):
-    def test_owned_message_requires_two_consecutive_observations(self) -> None:
+    def test_first_nonempty_composer_observation_proves_processing(self) -> None:
         sequence = [owned(), result("CLEAR"), owned(), owned()]
         delays = []
         with mock.patch.object(tmux_send, "capture_target", side_effect=sequence):
-            actual = tmux_send._wait_for_owned_message(
-                pane(), "message\n", sleep=delays.append
+            actual = tmux_send._wait_for_processed_paste(
+                pane(), None, sleep=delays.append
             )
-        self.assertTrue(tmux_send._owned_message(actual, "message\n"))
-        self.assertEqual(delays, [0.05, 0.1, 0.2, 0.4])
+        self.assertTrue(tmux_send._paste_processed(actual, None))
+        self.assertEqual(delays, [0.05])
 
-    def test_stale_clear_never_counts_as_sent_payload(self) -> None:
+    def test_stale_clear_never_counts_as_processed_paste(self) -> None:
         delays = []
         with mock.patch.object(
             tmux_send,
             "capture_target",
             return_value=result("CLEAR"),
         ):
-            actual = tmux_send._wait_for_owned_message(
-                pane(), "message\n", sleep=delays.append
+            actual = tmux_send._wait_for_processed_paste(
+                pane(), None, sleep=delays.append
             )
-        self.assertFalse(tmux_send._owned_message(actual, "message\n"))
+        self.assertFalse(tmux_send._paste_processed(actual, None))
         self.assertEqual(delays, list(tmux_send.VERIFY_DELAYS_SECONDS))
         self.assertAlmostEqual(sum(delays), 3.15)
+
+    def test_changed_dim_placeholder_proves_processing(self) -> None:
+        before = tmux_send.Composer("codex", "Ask Codex", True, False)
+        after = tmux_send.Composer("codex", "[Pasted Content 100 chars]", True, False)
+        self.assertTrue(tmux_send._paste_processed(result("CLEAR", after), before))
 
     def test_clear_wait_uses_exponential_schedule(self) -> None:
         sequence = [owned() for _ in range(5)] + [result("CLEAR")]
@@ -296,23 +298,6 @@ class VerificationTests(unittest.TestCase):
             actual = tmux_send._wait_for_clear(pane(), sleep=delays.append)
         self.assertEqual(actual.state, "CLEAR")
         self.assertEqual(delays, list(tmux_send.VERIFY_DELAYS_SECONDS))
-
-
-class PreflightTests(unittest.TestCase):
-    def test_line_that_would_wrap_is_unobservable(self) -> None:
-        self.assertIn(
-            "wrap",
-            tmux_send._unobservable_reason("x" * (WIDTH - 1), pane()),
-        )
-
-    def test_trailing_space_is_unobservable(self) -> None:
-        self.assertIn("space", tmux_send._unobservable_reason("message ", pane()))
-
-    def test_terminal_control_is_unobservable(self) -> None:
-        self.assertIn("control", tmux_send._unobservable_reason("a\tb", pane()))
-
-    def test_fitting_unicode_line_is_observable(self) -> None:
-        self.assertEqual(tmux_send._unobservable_reason("plain café", pane()), "")
 
 
 class OutputContractTests(unittest.TestCase):
@@ -332,7 +317,7 @@ class OutputContractTests(unittest.TestCase):
         *,
         initial: object,
         tmux_result: object | None = None,
-        owned_result: object | None = None,
+        processed_result: object | None = None,
         clear_result: object | None = None,
     ) -> tuple[int, str, str, mock.Mock]:
         stdout = io.StringIO()
@@ -344,8 +329,8 @@ class OutputContractTests(unittest.TestCase):
             mock.patch.object(tmux_send, "_tmux", return_value=tmux_result) as tmux_call,
             mock.patch.object(
                 tmux_send,
-                "_wait_for_owned_message",
-                return_value=owned_result or owned(),
+                "_wait_for_processed_paste",
+                return_value=processed_result or owned(),
             ),
             mock.patch.object(
                 tmux_send,
@@ -366,19 +351,81 @@ class OutputContractTests(unittest.TestCase):
         self.assertEqual(send_keys[0].args[-1], "Enter")
         self.assertEqual(send_keys[0].args[-2], "%7")
 
-    def test_crlf_is_refused_as_unobservable_without_tmux_mutation(self) -> None:
+    def test_message_newline_bytes_are_not_translated(self) -> None:
         message = "first\r\nsecond\r"
         stdout = io.StringIO()
+        okay = self.completed()
         with (
             mock.patch.object(tmux_send, "resolve_target", return_value=(pane(), "", "")),
             mock.patch.object(tmux_send, "capture_target", return_value=result("CLEAR")),
-            mock.patch.object(tmux_send, "_tmux") as tmux_call,
+            mock.patch.object(
+                tmux_send,
+                "_wait_for_processed_paste",
+                return_value=owned(message),
+            ),
+            mock.patch.object(tmux_send, "_wait_for_clear", return_value=result("CLEAR")),
+            mock.patch.object(tmux_send, "_tmux", return_value=okay) as tmux_call,
             contextlib.redirect_stdout(stdout),
             contextlib.redirect_stderr(io.StringIO()),
         ):
             code = tmux_send.send_message("s:w.0", self.message_path(message))
-        self.assertEqual((code, stdout.getvalue()), (3, "UNKNOWN unobservable\n"))
-        tmux_call.assert_not_called()
+        load = [call for call in tmux_call.call_args_list if call.args[0] == "load-buffer"]
+        self.assertEqual(code, 0)
+        self.assertEqual(len(load), 1)
+        self.assertEqual(load[0].kwargs["input_text"], message)
+
+    def test_stdin_bytes_use_the_same_buffer_path(self) -> None:
+        stdout = io.StringIO()
+        okay = self.completed()
+        message = "shell-safe wake"
+        with (
+            mock.patch.object(tmux_send, "resolve_target", return_value=(pane(), "", "")),
+            mock.patch.object(tmux_send, "capture_target", return_value=result("CLEAR")),
+            mock.patch.object(
+                tmux_send,
+                "_wait_for_processed_paste",
+                return_value=owned(message),
+            ),
+            mock.patch.object(tmux_send, "_wait_for_clear", return_value=result("CLEAR")),
+            mock.patch.object(tmux_send, "_tmux", return_value=okay) as tmux_call,
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            code = tmux_send.send_message(
+                "s:w.0",
+                read_stdin=True,
+                stdin=io.BytesIO(message.encode("utf-8")),
+            )
+        load = [call for call in tmux_call.call_args_list if call.args[0] == "load-buffer"]
+        self.assertEqual((code, stdout.getvalue()), (0, "SENT\n"))
+        self.assertEqual(len(load), 1)
+        self.assertEqual(load[0].kwargs["input_text"], message)
+
+    def test_shell_safe_text_uses_the_same_buffer_path(self) -> None:
+        stdout = io.StringIO()
+        okay = self.completed()
+        message = "simple status wake"
+        with (
+            mock.patch.object(tmux_send, "resolve_target", return_value=(pane(), "", "")),
+            mock.patch.object(tmux_send, "capture_target", return_value=result("CLEAR")),
+            mock.patch.object(
+                tmux_send,
+                "_wait_for_processed_paste",
+                return_value=owned(message),
+            ),
+            mock.patch.object(tmux_send, "_wait_for_clear", return_value=result("CLEAR")),
+            mock.patch.object(tmux_send, "_tmux", return_value=okay) as tmux_call,
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            code = tmux_send.send_message(
+                "s:w.0",
+                shell_safe_text=message,
+            )
+        load = [call for call in tmux_call.call_args_list if call.args[0] == "load-buffer"]
+        self.assertEqual((code, stdout.getvalue()), (0, "SENT\n"))
+        self.assertEqual(len(load), 1)
+        self.assertEqual(load[0].kwargs["input_text"], message)
 
     def test_occupied_is_non_idempotent_refusal(self) -> None:
         code, stdout, stderr, tmux_call = self.invoke(initial=owned("draft"))
@@ -399,24 +446,6 @@ class OutputContractTests(unittest.TestCase):
         self.assertEqual((code, stdout), (3, "UNKNOWN layout\n"))
         self.assertIn("pane shape", stderr)
         self.assertEqual(tmux_call.call_count, 0)
-
-    def test_unobservable_message_refuses_before_buffer_or_paste(self) -> None:
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-        with (
-            mock.patch.object(tmux_send, "resolve_target", return_value=(pane(), "", "")),
-            mock.patch.object(tmux_send, "capture_target", return_value=result("CLEAR")),
-            mock.patch.object(tmux_send, "_tmux") as tmux_call,
-            contextlib.redirect_stdout(stdout),
-            contextlib.redirect_stderr(stderr),
-        ):
-            code = tmux_send.send_message(
-                "s:w.0",
-                self.message_path("x" * WIDTH),
-            )
-        self.assertEqual((code, stdout.getvalue()), (3, "UNKNOWN unobservable\n"))
-        self.assertIn("wrap", stderr.getvalue())
-        tmux_call.assert_not_called()
 
     def test_server_and_target_unknown_name_class(self) -> None:
         for kind in ("server", "target"):
@@ -463,7 +492,7 @@ class OutputContractTests(unittest.TestCase):
     def test_stale_clear_after_paste_never_sends_enter(self) -> None:
         code, stdout, _, tmux_call = self.invoke(
             initial=result("CLEAR"),
-            owned_result=result("CLEAR"),
+            processed_result=result("CLEAR"),
         )
         self.assertEqual((code, stdout), (4, "DELIVERY_UNVERIFIED paste-not-observed\n"))
         self.assertFalse(any(call.args[0] == "send-keys" for call in tmux_call.call_args_list))
@@ -475,7 +504,7 @@ class OutputContractTests(unittest.TestCase):
         with (
             mock.patch.object(tmux_send, "resolve_target", return_value=(pane(), "", "")),
             mock.patch.object(tmux_send, "capture_target", return_value=result("CLEAR")),
-            mock.patch.object(tmux_send, "_wait_for_owned_message", return_value=owned()),
+            mock.patch.object(tmux_send, "_wait_for_processed_paste", return_value=owned()),
             mock.patch.object(tmux_send, "_tmux", side_effect=[okay, okay, failed]),
             contextlib.redirect_stdout(stdout),
             contextlib.redirect_stderr(io.StringIO()),
@@ -502,7 +531,7 @@ class OutputContractTests(unittest.TestCase):
             mock.patch.object(tmux_send, "_tmux", return_value=okay),
             mock.patch.object(
                 tmux_send,
-                "_wait_for_owned_message",
+                "_wait_for_processed_paste",
                 side_effect=KeyboardInterrupt,
             ),
             contextlib.redirect_stdout(stdout),
@@ -520,7 +549,7 @@ class OutputContractTests(unittest.TestCase):
         with (
             mock.patch.object(tmux_send, "resolve_target", return_value=(pane(), "", "")),
             mock.patch.object(tmux_send, "capture_target", return_value=result("CLEAR")),
-            mock.patch.object(tmux_send, "_wait_for_owned_message", return_value=owned()),
+            mock.patch.object(tmux_send, "_wait_for_processed_paste", return_value=owned()),
             mock.patch.object(tmux_send, "_wait_for_clear", side_effect=KeyboardInterrupt),
             mock.patch.object(tmux_send, "_tmux", return_value=okay) as tmux_call,
             contextlib.redirect_stdout(stdout),
@@ -543,7 +572,7 @@ class OutputContractTests(unittest.TestCase):
             mock.patch.object(tmux_send, "_tmux", return_value=okay),
             mock.patch.object(
                 tmux_send,
-                "_wait_for_owned_message",
+                "_wait_for_processed_paste",
                 side_effect=RuntimeError("secret pane text"),
             ),
             contextlib.redirect_stdout(stdout),

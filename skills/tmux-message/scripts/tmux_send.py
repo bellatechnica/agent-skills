@@ -12,7 +12,7 @@ import signal
 import subprocess
 import sys
 import time
-import unicodedata
+from typing import BinaryIO
 import uuid
 
 
@@ -30,7 +30,6 @@ EXIT_DELIVERY_UNVERIFIED = 4
 EXIT_USAGE = 64
 
 VERIFY_DELAYS_SECONDS = (0.05, 0.1, 0.2, 0.4, 0.8, 1.6)
-PROMPT_COLUMNS = 2
 
 _OUTCOME_DECIDED = False
 
@@ -336,31 +335,6 @@ def _server_hint() -> str:
     return tmux_environment.split(",", 1)[0] or "default"
 
 
-def _display_width(text: str) -> int | None:
-    width = 0
-    for character in text:
-        category = unicodedata.category(character)
-        if category.startswith("C"):
-            return None
-        if unicodedata.combining(character):
-            continue
-        width += 2 if unicodedata.east_asian_width(character) in {"W", "F", "A"} else 1
-    return width
-
-
-def _unobservable_reason(message: str, pane: PaneIdentity) -> str:
-    available_columns = pane.pane_width - PROMPT_COLUMNS
-    for line in message.split("\n"):
-        if line.endswith(" "):
-            return "a logical line ends in an indistinguishable display space"
-        width = _display_width(line)
-        if width is None:
-            return "a logical line contains a terminal control character"
-        if width > available_columns:
-            return "a logical line would wrap in the current pane"
-    return ""
-
-
 def resolve_target(target: str) -> tuple[PaneIdentity | None, str, str]:
     server = _tmux("list-sessions", "-F", "#{pid}\t#{socket_path}")
     if server.returncode != 0:
@@ -450,32 +424,24 @@ def capture_target(pane: PaneIdentity) -> CaptureResult:
     )
 
 
-def _owned_message(result: CaptureResult, expected: str) -> bool:
-    return (
-        result.state == OCCUPIED
-        and result.composer is not None
-        and not result.composer.has_dim_text
-        and result.composer.text == expected
-    )
+def _paste_processed(result: CaptureResult, before: Composer | None) -> bool:
+    if result.composer is None or not result.composer.text:
+        return False
+    return result.state == OCCUPIED or result.composer != before
 
 
-def _wait_for_owned_message(
+def _wait_for_processed_paste(
     pane: PaneIdentity,
-    expected: str,
+    before: Composer | None,
     *,
     sleep=time.sleep,
 ) -> CaptureResult:
-    consecutive = 0
     latest = CaptureResult(UNKNOWN, "layout", "verification did not run", None)
     for delay in VERIFY_DELAYS_SECONDS:
         sleep(delay)
         latest = capture_target(pane)
-        if _owned_message(latest, expected):
-            consecutive += 1
-            if consecutive == 2:
-                return latest
-        else:
-            consecutive = 0
+        if _paste_processed(latest, before):
+            return latest
     return latest
 
 
@@ -505,7 +471,6 @@ def _emit_unknown(
         "server": "tmux server or socket could not be reached",
         "target": "tmux answered, but the target pane could not be resolved",
         "layout": "pane shape is not recognized",
-        "unobservable": "message cannot be reconstructed exactly in this pane",
         "buffer": "tmux could not prepare the message buffer",
         "interrupted": "the sender was interrupted before paste was issued",
         "internal": "the sender failed before paste was issued",
@@ -553,7 +518,14 @@ def _begin_outcome() -> None:
     _OUTCOME_DECIDED = True
 
 
-def send_message(target: str, message_file: Path) -> int:
+def send_message(
+    target: str,
+    message_file: Path | None = None,
+    *,
+    read_stdin: bool = False,
+    shell_safe_text: str | None = None,
+    stdin: BinaryIO | None = None,
+) -> int:
     global _OUTCOME_DECIDED
     _OUTCOME_DECIDED = False
     pane: PaneIdentity | None = None
@@ -561,13 +533,30 @@ def send_message(target: str, message_file: Path) -> int:
     paste_issued = False
     enter_issued = False
     try:
-        if not message_file.is_file():
-            raise UsageError(f"message file is not a regular file: {message_file}")
+        source_count = sum(
+            (message_file is not None, read_stdin, shell_safe_text is not None)
+        )
+        if source_count != 1:
+            raise UsageError("choose exactly one message source")
         try:
-            message = message_file.read_bytes().decode("utf-8")
+            if read_stdin:
+                input_stream = stdin if stdin is not None else sys.stdin.buffer
+                message_bytes = input_stream.read()
+                message = message_bytes.decode("utf-8")
+            elif shell_safe_text is not None:
+                message = shell_safe_text
+            else:
+                assert message_file is not None
+                if not message_file.is_file():
+                    raise UsageError(
+                        f"message file is not a regular file: {message_file}"
+                    )
+                message = message_file.read_bytes().decode("utf-8")
+        except UsageError:
+            raise
         except (OSError, UnicodeError) as error:
             raise UsageError(
-                f"could not read UTF-8 message file {message_file}: {error}"
+                f"could not read UTF-8 message source: {error}"
             ) from error
 
         pane, failure_class, detail = resolve_target(target)
@@ -600,15 +589,6 @@ def send_message(target: str, message_file: Path) -> int:
                 pane.socket_path,
             )
 
-        unobservable = _unobservable_reason(message, pane)
-        if unobservable:
-            return _emit_unknown(
-                "unobservable",
-                target,
-                unobservable,
-                pane.socket_path,
-            )
-
         buffer_name = f"tmux-message-{os.getpid()}-{uuid.uuid4().hex}"
         load = _tmux("load-buffer", "-b", buffer_name, "-", input_text=message)
         if load.returncode != 0:
@@ -631,8 +611,8 @@ def send_message(target: str, message_file: Path) -> int:
             return _emit_unverified("paste-failed", pane, target, paste.stderr.strip())
         buffer_name = None
 
-        observed = _wait_for_owned_message(pane, message)
-        if not _owned_message(observed, message):
+        observed = _wait_for_processed_paste(pane, initial.composer)
+        if not _paste_processed(observed, initial.composer):
             return _emit_unverified(
                 "paste-not-observed", pane, target, observed.detail
             )
@@ -668,7 +648,13 @@ def _parser() -> Parser:
         description="Send one non-idempotent message only through a verified clear composer."
     )
     parser.add_argument("target", help="tmux target, such as session:window.pane")
-    parser.add_argument("message_file", type=Path)
+    sources = parser.add_mutually_exclusive_group(required=True)
+    sources.add_argument("--file", type=Path, help="read exact UTF-8 from a file")
+    sources.add_argument("--stdin", action="store_true", help="read exact UTF-8 from stdin")
+    sources.add_argument(
+        "--shell-safe-text",
+        help="use a non-sensitive message the caller has judged shell-safe",
+    )
     return parser
 
 
@@ -685,7 +671,12 @@ def main(argv: list[str] | None = None) -> int:
         for signal_number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             previous_handlers[signal_number] = signal.getsignal(signal_number)
             signal.signal(signal_number, _raise_signal)
-        return send_message(args.target, args.message_file)
+        return send_message(
+            args.target,
+            args.file,
+            read_stdin=args.stdin,
+            shell_safe_text=args.shell_safe_text,
+        )
     except UsageError as error:
         print(f"usage error: {error}", file=sys.stderr)
         return EXIT_USAGE

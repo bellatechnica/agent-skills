@@ -34,25 +34,48 @@ distinguish a confirmed pre-send refusal from an uncertain attempt.
   still visible. Activity text without a composer is `UNKNOWN layout`, not
   permission to type.
 
-## Put the exact message in a file
+## Supply the exact message
 
-Create a uniquely named UTF-8 file under `/tmp` using the current client's safe
-file-writing facility. For Codex, use `apply_patch`. Other clients need not have
-that tool. Do not interpolate the message through shell `echo`, `printf`, a
-here-document, JSON serialization, or a quoted command. Preserve every byte and
-real LF character; do not rewrite or truncate the message for transport.
+Use a uniquely named UTF-8 file under `/tmp` for arbitrary, multiline,
+sensitive, or otherwise exact content. Create it with the current client's safe
+file-writing facility; for Codex, use `apply_patch`. Other clients need not have
+that tool.
+
+Use `--stdin` to read UTF-8 from stdin. Use this only when the caller has
+established that its stdin producer is shell-safe, emits the intended trailing
+LF, exposes no sensitive content, and leaves the exact input reproducible after
+a non-`SENT` result. A simple `echo 'literal'` pipeline may qualify; it is the
+caller's decision, not a guarantee made by this script.
+
+Use `--shell-safe-text <text>` only for non-sensitive text whose shell parsing,
+argument-size, and exact resulting value the caller has reviewed. The flag
+records that judgment; the script cannot validate it. Because the text appears
+in process arguments and the calling command, this mode is not suitable for
+sensitive content.
+
+Do not rewrite or truncate a message for transport. Avoid command substitution,
+JSON serialization, or shell interpolation that changes real LF characters or
+interprets message text.
 
 ## Invoke the guarded sender
 
 Resolve the script path relative to this `SKILL.md`, then run:
 
-    python3 <tmux-message-skill>/scripts/tmux_send.py <target> /tmp/<message-file>
+    python3 <tmux-message-skill>/scripts/tmux_send.py <target> --file /tmp/<message-file>
+
+or:
+
+    <safe-stdin-producer> | python3 <tmux-message-skill>/scripts/tmux_send.py <target> --stdin
+
+or:
+
+    python3 <tmux-message-skill>/scripts/tmux_send.py <target> --shell-safe-text '<reviewed-text>'
 
 The stdout line is the stable result token and is written only after the outcome
 is decided. Some failures add a stable class or stage after it:
 
-- `SENT`, exit `0`: the script observed the complete pasted message twice,
-  issued one Enter, and then observed that composer clear.
+- `SENT`, exit `0`: after paste, the script observed a recognized non-empty
+  composer, issued one Enter, and then observed that composer clear.
 - `OCCUPIED`, exit `1`: an ordinary draft is present; nothing was sent.
 - `DIALOG`, exit `2`: a dialog or other non-composer interface owns the pane;
   nothing was sent.
@@ -60,7 +83,6 @@ is decided. Some failures add a stable class or stage after it:
   - `server`: tmux or its socket could not be reached;
   - `target`: tmux answered, but the requested or pinned pane did not;
   - `layout`: the pane was captured, but its shape was not recognized;
-  - `unobservable`: the message cannot be reconstructed exactly in this pane;
   - `buffer`: tmux could not prepare the exact message buffer;
   - `interrupted` or `internal`: execution stopped before paste was issued.
 - `DELIVERY_UNVERIFIED <stage>`, exit `4`: at least one paste or key command may
@@ -78,8 +100,9 @@ The script never prints its pane capture, composer text, or transcript. Stderr
 contains the target, pinned pane where available, socket, state explanation, and
 tmux's own error text.
 
-Remove the exact message file only after `SENT`. Retain it after every other
-result. Never clean message files with a glob.
+Remove a message file only after `SENT`. Retain it after every other result.
+For stdin, retain the exact reproducible source instead. Never clean message
+files with a glob.
 
 ## Respond to a result
 
@@ -99,7 +122,7 @@ and that caller's immediately preceding attempt of the same retained message
 returned `DELIVERY_UNVERIFIED interrupted-before-enter`. A no-token run does not
 qualify because the caller cannot know whether Enter was issued. Unless
 inspection was separately disallowed, the caller may resolve the reported pane
-to the same `%pane_id`, inspect it read-only twice, and judge whether the entire
+to the same `%pane_id`, inspect it read-only, and judge whether the entire
 non-dim composer is exactly the retained message. If it is, the permitted action
 is exactly one `tmux send-keys -t <reported-%pane_id> Enter`; do not paste or
 rerun the sender. Observe the pane afterwards, but do not relabel the script's
@@ -129,8 +152,6 @@ make delivery possible.
   absent, escalate rather than guessing another pane.
 - `UNKNOWN layout`: retain the message and wait for a recognized composer. Do
   not loosen the classifier from one unfamiliar capture.
-- `UNKNOWN unobservable`: nothing was pasted. Use Agent Relay or a durable file
-  reference rather than changing or truncating the retained message.
 - `UNKNOWN buffer`, `UNKNOWN interrupted`, or `UNKNOWN internal`: fix or report
   the stated local failure before retrying.
 
@@ -145,10 +166,11 @@ instruction explicitly disallows inspection. Inspection may inform the caller
 or operator, but a clear composer alone and message text anywhere on screen do
 not prove delivery. Out-of-band evidence such as the recipient's reply may.
 
-Retain the exact message file. Escalate to the operator of the calling session;
-for a handoff, also notify the counterpart through Agent Relay. Report the
-target, UTC time, message-file path, result stage, and stderr diagnostic. Never
-include pane contents in a report, record, or Relay message.
+Retain the exact message file or reproducible stdin source. Escalate to the
+operator of the calling session; for a handoff, also notify the counterpart
+through Agent Relay. Report the target, UTC time, retained source, result stage,
+and stderr diagnostic. Never include pane contents in a report, record, or
+Relay message.
 
 If the message was only a Relay wake, report that Relay accepted the durable
 payload but active wake-up is unverified. Do not resend the Relay payload.
@@ -179,31 +201,22 @@ It recognizes only anchored Claude Code and Codex composer regions:
 - Any dialog marker, mixed plain-plus-dim text, malformed region, or absent
   composer fails closed as `DIALOG`, `OCCUPIED`, or `UNKNOWN layout`.
 
-Before Enter, the entire reconstructed composer must equal the message file
-without whitespace collapse, substring matching, or case folding; no non-space
-character may be dim. Claude Code paints display-padding spaces to the right
-edge, so only that client's right-edge padding is removed during reconstruction.
-A logical line ending in spaces is therefore not verifiable and receives no
-Enter. Equality must hold in two consecutive captures. Soft-wrapped, collapsed,
-or otherwise unreconstructable messages produce
-`DELIVERY_UNVERIFIED paste-not-observed` and receive no Enter.
-
-Before loading a tmux buffer, the script refuses as `UNKNOWN unobservable` when
-a logical line contains a terminal control character, ends in a display space,
-or is wider than the pane after the two-column prompt prefix. These conditions
-predict lossy reconstruction without a per-client size cap. A client may still
-collapse a large or multiline bracketed paste into an opaque placeholder; no
-approved collapse threshold exists, so that case remains
-`DELIVERY_UNVERIFIED paste-not-observed` and may strand text in the composer.
+Before Enter, the script waits until one capture shows any recognized non-empty
+composer after the successful paste command. Visible text, soft-wrapped text,
+and a client-native opaque paste placeholder all establish that the client has
+processed input after the paste. A stale clear frame does not. If every capture
+in the 3.15-second window remains clear or unrecognized, the script produces
+`DELIVERY_UNVERIFIED paste-not-observed` and sends no Enter.
 
 After one Enter, the script polls on the approved exponential schedule of 50,
-100, 200, 400, 800, and 1600 ms. `SENT` requires the previously observed owned
-composer to become `CLEAR`. It never sends a recovery Enter. A stale clear frame
-before the owned-paste observation cannot satisfy this transition.
+100, 200, 400, 800, and 1600 ms. `SENT` requires the previously observed
+non-empty composer to become `CLEAR`. It never sends a recovery Enter. A stale
+clear frame before the processed-paste observation cannot satisfy this
+transition.
 
 Bracketed paste is required for Codex. Literal `send-keys` can trigger its
 paste-burst detector and strand raw text or a `[Pasted Content ...]` placeholder.
 
-The check and paste remain separate tmux commands, so the script narrows rather
-than eliminates the operator race. Over-strict refusal is the required failure
-direction.
+The check and paste remain separate tmux commands, so the script cannot
+attribute content that another writer places in the composer concurrently. That
+operator race is an explicit residual limitation.
