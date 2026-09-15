@@ -127,8 +127,8 @@ Do not expose unrelated transcript content or sensitive information.
 
 ### Inspection-authorized fallback after a refusal
 
-After `OCCUPIED`, `DIALOG`, or `UNKNOWN layout`, an inspection-capable caller
-may make its own delivery judgment. The script's refusal does not overrule a
+The result-specific rules below decide when an inspection-capable caller may
+start this fallback. At that point, the script's refusal does not overrule a
 caller that positively identifies the intended agent's ordinary, clear message
 composer and judges the pane safe. A real draft, dialog, overlay, shell mode,
 permission prompt, or composer addressed to another agent is not safe; wait
@@ -138,18 +138,18 @@ typed text followed by a dim completion is a real draft. Only a composer whose
 entire visible content is empty, or is a dim suggestion with no typed
 characters, is clear.
 
-Before starting the fallback, cancel that message's retry schedule and confirm
-that no guarded invocation for it is still running. Once the fallback begins,
-the message never returns to the retry path. Pin the `%pane_id` printed in the
-refused invocation's stderr diagnostic (`pane %N`) and inspect that pane
-immediately before mutation. Preserve ANSI attributes during inspection so dim
-suggestions remain distinguishable from plain drafts; query the terminal cursor
-as a second signal when styling is ambiguous. A passive notice above an
-independently clear composer does not need to be dismissed before delivery.
-Finish and read the inspection before starting any mutation; do not pipe a
-capture into the paste operation. Deliver only the exact retained source that
-invocation already accepted, so the empty-message and control-character checks
-have run:
+Before starting the fallback, cancel any remaining retries for that message and
+confirm that no guarded invocation for it is still running. Once the fallback
+issues its paste, the message never returns to the retry path. Pin the
+`%pane_id` printed in the refused invocation's stderr diagnostic (`pane %N`) and
+inspect that pane immediately before mutation. Preserve ANSI attributes during
+inspection so dim suggestions remain distinguishable from plain drafts; query
+the terminal cursor as a second signal when styling is ambiguous. A passive
+notice above an independently clear composer does not need to be dismissed
+before delivery. Finish and read the inspection before starting any mutation;
+do not pipe a capture into the paste operation. Deliver only the exact retained
+source that invocation already accepted, so the empty-message and control-
+character checks have run:
 
     tmux load-buffer -b <unique-name> <retained-file>
     tmux paste-buffer -p -r -d -b <unique-name> -t <%pane_id>
@@ -191,15 +191,29 @@ message files with a glob.
 
 ## Respond to a result
 
-For `OCCUPIED`, `DIALOG`, or `UNKNOWN layout`, choose either the inspection-
-authorized fallback or the guarded retry path. On the retry path, retain the
-exact message source and retry the same guarded command after roughly 5 seconds,
-15 seconds, 45 seconds, and 2 minutes. Each invocation classifies the pane again
-immediately before any paste, so it sends only after the pane becomes safe. Stop
-the schedule on `SENT` or any result other than `OCCUPIED`, `DIALOG`, or
-`UNKNOWN layout`. If all four retries still refuse, postpone the message and
-start the same schedule again at the caller's next natural work turn or after an
-external notification; escalate only when delivery blocks progress.
+Retain the exact message source while a pre-send refusal remains unresolved.
+The ordering depends on the result and the caller's inspection permission:
+
+- After `OCCUPIED` or `DIALOG`, retry the same guarded command after roughly 5
+  seconds, 15 seconds, 45 seconds, and 2 minutes. Only after all four retries
+  still return `OCCUPIED` or `DIALOG` may an inspection-permitted caller start
+  the inspection-authorized fallback. A caller not permitted to inspect instead
+  postpones the message and starts the same schedule again at its next natural
+  work turn or after an external notification.
+- After `UNKNOWN layout`, an inspection-permitted caller skips the retry
+  schedule and starts the inspection-authorized fallback immediately. A caller
+  not permitted to inspect uses the guarded retry schedule above.
+
+Each retry classifies the pane again immediately before any paste, so it sends
+only after the pane becomes safe. Handle every new result by its own rule: in
+particular, an inspection-permitted caller stops an `OCCUPIED` or `DIALOG`
+schedule and inspects immediately if a retry returns `UNKNOWN layout`. Stop the
+schedule on `SENT` or any result other than `OCCUPIED`, `DIALOG`, or `UNKNOWN
+layout`. If an authorized inspection does not positively identify a safe clear
+composer, issue no paste, retain the message, and postpone it. At the caller's
+next natural work turn or after an external notification, start again with a
+fresh guarded invocation and handle the result under its own rule. Escalate only
+when delivery blocks progress.
 
 Both the timed and postponed retries are permitted only when no attempt of that
 same retained message, before or during the schedule, returned
@@ -211,10 +225,11 @@ one-Enter completion under `DELIVERY_UNVERIFIED` may act on it.
 ### `OCCUPIED`
 
 An ordinary draft is not safe: do not append to it, submit it, clear it, or
-dismiss it. If inspection is disallowed, confirms the draft, or cannot
-positively identify a misclassified clear composer, let the guarded retry
-schedule send only after the operator or target session independently clears the
-composer. Otherwise the inspection-authorized fallback applies.
+dismiss it. For an ordinary message, always begin with the guarded retry
+schedule. Only after its four retries are exhausted may an inspection-permitted
+caller check whether the result was a misclassified clear composer and, if so,
+use the inspection-authorized fallback. Otherwise wait for the operator or
+target session to clear the composer independently.
 
 The `agent-relay-message` helper performs a separate automatic exception for an
 already occupied, complete Relay wake notice. Wake notices are idempotent;
@@ -222,11 +237,12 @@ normal messages are not.
 
 ### `DIALOG`
 
-A real dialog belongs to the operator: send no key, including Esc, and let the
-guarded retry schedule detect when it closes independently. If inspection
-instead positively identifies a misclassified ordinary clear composer, the
-inspection-authorized fallback applies. Its separate Esc rule covers only an
-input-mode suggestion raised by the caller's own direct paste.
+A real dialog belongs to the operator: send no key, including Esc, and always
+begin with the guarded retry schedule. Only after its four retries are exhausted
+may an inspection-permitted caller check whether the result was a misclassified
+ordinary clear composer and, if so, use the inspection-authorized fallback. Its
+separate Esc rule covers only an input-mode suggestion raised by the caller's
+own direct paste.
 
 ### `UNKNOWN`
 
@@ -244,10 +260,11 @@ Inspection does not by itself relabel the sender's result.
   recovery from this result only; it does not restrict how other workflows
   obtain an address in the first place.
 - `UNKNOWN layout`: do not loosen the classifier from one unfamiliar capture.
-  An inspection-capable caller may use the fallback when it positively judges
-  the actual composer safe; otherwise retain the message and let the guarded
-  retry schedule detect whether a transient client screen returns to a
-  recognized composer.
+  An inspection-permitted caller inspects immediately and may use the fallback
+  when it positively judges the actual composer safe; it does not run the
+  guarded retry schedule before that inspection. A caller not permitted to
+  inspect uses the guarded retry schedule to detect whether a transient client
+  screen returns to a recognized composer.
 - `UNKNOWN buffer`, `UNKNOWN interrupted`, or `UNKNOWN internal`: fix or report
   the stated local failure before retrying.
 
