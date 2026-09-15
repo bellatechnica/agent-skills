@@ -847,10 +847,11 @@ def _emit_unknown(
     kind: str,
     target: str,
     detail: str,
-    socket_path: str | None = None,
+    pane: PaneIdentity | None = None,
 ) -> int:
     _begin_outcome()
-    socket = socket_path or _server_hint()
+    socket = pane.socket_path if pane is not None else _server_hint()
+    pane_fragment = f"; pane {pane.pane_id}" if pane is not None else ""
     explanations = {
         "server": "tmux server or socket could not be reached",
         "target": "tmux answered, but the target pane could not be resolved",
@@ -863,7 +864,7 @@ def _emit_unknown(
     suffix = f"; detail: {detail}" if detail else ""
     print(
         f"{UNKNOWN} {kind}: {explanation}; nothing sent "
-        f"(target {target}; socket {socket}){suffix}",
+        f"(target {target}{pane_fragment}; socket {socket}){suffix}",
         file=sys.stderr,
     )
     return _emit_token(f"{UNKNOWN} {kind}", EXIT_UNKNOWN)
@@ -973,13 +974,13 @@ def send_message(
                 initial.detail_class or "layout",
                 target,
                 initial.detail,
-                pane.socket_path,
+                pane,
             )
 
         buffer_name = f"tmux-message-{os.getpid()}-{uuid.uuid4().hex}"
         load = _tmux("load-buffer", "-b", buffer_name, "-", input_text=message)
         if load.returncode != 0:
-            return _emit_unknown("buffer", target, load.stderr.strip(), pane.socket_path)
+            return _emit_unknown("buffer", target, load.stderr.strip(), pane)
 
         paste_issued = True
         paste = _tmux(
@@ -1022,14 +1023,14 @@ def send_message(
         if paste_issued:
             stage = "interrupted-after-enter" if enter_issued else "interrupted-before-enter"
             return _emit_unverified(stage, pane, target, type(error).__name__)
-        return _emit_unknown("interrupted", target, type(error).__name__)
+        return _emit_unknown("interrupted", target, type(error).__name__, pane)
     except Exception as error:
         _begin_outcome()
         if buffer_name is not None:
             _tmux("delete-buffer", "-b", buffer_name)
         if paste_issued:
             return _emit_unverified("internal-error", pane, target, type(error).__name__)
-        return _emit_unknown("internal", target, type(error).__name__)
+        return _emit_unknown("internal", target, type(error).__name__, pane)
 
 
 def _parser() -> Parser:

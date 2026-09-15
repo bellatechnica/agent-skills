@@ -905,12 +905,19 @@ class OutputContractTests(unittest.TestCase):
         self.assertEqual((code, stdout), (2, "DIALOG\n"))
         self.assertEqual(tmux_call.call_count, 0)
 
-    def test_layout_unknown_names_class(self) -> None:
-        initial = tmux_send.CaptureResult("UNKNOWN", "layout", "unrecognized", None)
-        code, stdout, stderr, tmux_call = self.invoke(initial=initial)
-        self.assertEqual((code, stdout), (3, "UNKNOWN layout\n"))
-        self.assertIn("pane shape", stderr)
-        self.assertEqual(tmux_call.call_count, 0)
+    def test_post_resolution_unknown_reports_class_and_pane(self) -> None:
+        cases = (
+            ("layout", "unrecognized", "pane shape"),
+            ("target", "pane vanished", "target pane"),
+        )
+        for kind, detail, explanation in cases:
+            with self.subTest(kind=kind):
+                initial = tmux_send.CaptureResult("UNKNOWN", kind, detail, None)
+                code, stdout, stderr, tmux_call = self.invoke(initial=initial)
+                self.assertEqual((code, stdout), (3, f"UNKNOWN {kind}\n"))
+                self.assertIn(explanation, stderr)
+                self.assertIn("pane %7", stderr)
+                self.assertEqual(tmux_call.call_count, 0)
 
     def test_claude_subagent_view_refuses_before_buffer_load(self) -> None:
         raw = claude_capture_with_background_agents(
@@ -940,6 +947,7 @@ class OutputContractTests(unittest.TestCase):
                     code = tmux_send.send_message("s:w.0", self.message_path())
                 self.assertEqual((code, stdout.getvalue()), (3, f"UNKNOWN {kind}\n"))
                 self.assertIn(f"{kind} failed", stderr.getvalue())
+                self.assertNotIn("pane %", stderr.getvalue())
 
     def test_buffer_failure_is_unknown_buffer(self) -> None:
         code, stdout, stderr, _ = self.invoke(
@@ -948,6 +956,7 @@ class OutputContractTests(unittest.TestCase):
         )
         self.assertEqual((code, stdout), (3, "UNKNOWN buffer\n"))
         self.assertIn("buffer failed", stderr)
+        self.assertIn("pane %7", stderr)
 
     def test_paste_failure_is_delivery_unverified(self) -> None:
         okay = self.completed()
