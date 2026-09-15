@@ -7,8 +7,10 @@ description: Deliver one message to a Claude Code, Codex, Antigravity CLI, or Op
 
 Keystrokes injected into another pane are indistinguishable from its operator
 typing them. Deliver each message through
-[`scripts/tmux_send.py`](scripts/tmux_send.py). Never replace it with a separate
-inspection followed by raw paste commands: the pane can change between them.
+[`scripts/tmux_send.py`](scripts/tmux_send.py). A caller permitted to inspect the
+pane may use the documented inspection-authorized fallback after a sender
+refusal; otherwise do not replace the script with separate inspection and raw
+paste commands because the pane can change between them.
 
 A normal message is **not guaranteed to be idempotent**. A second submission may
 repeat a merge, reply, request, or other action. The result rules below therefore
@@ -31,8 +33,8 @@ distinguish a confirmed pre-send refusal from an uncertain attempt.
   Agent Relay wake notices are the only exception. They carry no payload or
   authority and use the fixed format in the `agent-relay-message` skill.
 - A busy session is valid only when its structurally recognized composer is
-  still visible. Activity text without a composer is `UNKNOWN layout`, not
-  permission to type.
+  still visible. Activity text without a composer is `UNKNOWN layout`; only the
+  inspection-authorized fallback can permit delivery on that refused shape.
 - OpenCode interprets Enter in a visible composer during an active response as
   a steering message. The sender uses the client's ordinary Enter action; it
   does not change that message into OpenCode's separately queued Alt+Enter
@@ -119,50 +121,100 @@ explicitly disallows direct inspection. The captures and pane enumeration that
 print no pane content, and are not direct inspection; an instruction disallowing
 direct inspection does not restrict them.
 
-Remove a message file only after `SENT`. Retain it after every other result.
-For stdin, retain the exact reproducible source instead. Never clean message
-files with a glob.
+When direct inspection is allowed, the caller may quote or summarize the pane
+content needed to explain its finding in a report, record, or Relay message.
+Do not expose unrelated transcript content or sensitive information.
+
+### Inspection-authorized fallback after a refusal
+
+After `OCCUPIED`, `DIALOG`, or `UNKNOWN layout`, an inspection-capable caller
+may make its own delivery judgment. The script's refusal does not overrule a
+caller that positively identifies the intended agent's ordinary, clear message
+composer and judges the pane safe. A real draft, dialog, overlay, shell mode,
+permission prompt, or composer addressed to another agent is not safe; wait
+instead. A client-native paste placeholder (`[Pasted text #N …]`, `[Pasted
+Content N chars]`, or `[Pasted ~N lines]`) is a real draft even when dim, and
+typed text followed by a dim completion is a real draft. Only a composer whose
+entire visible content is empty, or is a dim suggestion with no typed
+characters, is clear.
+
+Before starting the fallback, cancel that message's retry schedule and confirm
+that no guarded invocation for it is still running. Once the fallback begins,
+the message never returns to the retry path. Pin the `%pane_id` printed in the
+refused invocation's stderr diagnostic (`pane %N`) and inspect that pane
+immediately before mutation. Preserve ANSI attributes during inspection so dim
+suggestions remain distinguishable from plain drafts; query the terminal cursor
+as a second signal when styling is ambiguous. A passive notice above an
+independently clear composer does not need to be dismissed before delivery.
+Finish and read the inspection before starting any mutation; do not pipe a
+capture into the paste operation. Deliver only the exact retained source that
+invocation already accepted, so the empty-message and control-character checks
+have run:
+
+    tmux load-buffer -b <unique-name> <retained-file>
+    tmux paste-buffer -p -r -d -b <unique-name> -t <%pane_id>
+
+For retained stdin or `--shell-safe-text`, feed the exact retained bytes to
+`tmux load-buffer -b <unique-name> -` without shell interpolation. The `-r`
+preserves literal LF characters and `-d` deletes the unique buffer. Never
+retype, reconstruct, or use `send-keys -l` for the message. Submit with a
+separate `tmux send-keys -t <%pane_id> Enter` call. If `paste-buffer` fails after
+`load-buffer` succeeded, run `tmux delete-buffer -b <unique-name>` and treat the
+attempt as uncertain.
+
+Inspect again after paste. Issue exactly one Enter only when the intended
+unsubmitted draft, including a client-native paste placeholder, owns the same
+ordinary composer. If the caller's own paste raised an input-mode suggestion
+dialog, it may issue one Esc before Enter only after an inspection immediately
+before Esc shows that same suggestion dialog still open, and only when the
+dialog appeared in direct response to that paste, describes an input-mode
+suggestion rather than an operator question, and the intended draft remains in
+the composer after Esc. Stop without another key when the pane, ownership, or
+dialog provenance is uncertain.
+
+After Enter, verify the composer's positive transition to empty; the message
+appearing in the transcript does not prove submission. Once the direct paste is
+issued, end every guarded retry schedule for that message. An observed clear
+composer means the message was delivered and no further attempt is made. Any
+other outcome is uncertain: treat it as `DELIVERY_UNVERIFIED` and never paste
+the message again. A direct attempt that pasted and certainly issued no Enter
+may use the one-Enter completion below, as if its stage were
+`paste-not-observed`. A direct attempt that issued an Enter, or where it is not
+known whether an Enter was issued, never qualifies. Report an inspection-
+authorized direct delivery, not `SENT`; `SENT` remains the guarded script's
+result.
+
+Remove a message file after `SENT` or after an inspection-authorized delivery
+whose cleared composer was observed. Retain it after every refusal or uncertain
+attempt. For stdin, retain the exact reproducible source instead. Never clean
+message files with a glob.
 
 ## Respond to a result
 
-For `OCCUPIED`, `DIALOG`, or `UNKNOWN layout`, retain the exact message source
-and retry the same guarded command after roughly 5 seconds, 15 seconds, 45
-seconds, and 2 minutes. Each invocation classifies the pane again immediately
-before any paste, so it sends only after the pane becomes safe. Stop the schedule
-on `SENT` or any result other than `OCCUPIED`, `DIALOG`, or `UNKNOWN layout`. If
-all four retries still refuse, postpone the message and start the same schedule
-again at the caller's next natural work turn or after an external notification;
-escalate only when delivery blocks progress.
+For `OCCUPIED`, `DIALOG`, or `UNKNOWN layout`, choose either the inspection-
+authorized fallback or the guarded retry path. On the retry path, retain the
+exact message source and retry the same guarded command after roughly 5 seconds,
+15 seconds, 45 seconds, and 2 minutes. Each invocation classifies the pane again
+immediately before any paste, so it sends only after the pane becomes safe. Stop
+the schedule on `SENT` or any result other than `OCCUPIED`, `DIALOG`, or
+`UNKNOWN layout`. If all four retries still refuse, postpone the message and
+start the same schedule again at the caller's next natural work turn or after an
+external notification; escalate only when delivery blocks progress.
 
 Both the timed and postponed retries are permitted only when no attempt of that
 same retained message, before or during the schedule, returned
 `DELIVERY_UNVERIFIED`, produced no result token, or produced a token/status
-disagreement. A message with any such attempt in its history never re-enters
-either retry; only the interrupted-send exception below may act on it.
+disagreement, and no inspection-authorized direct paste was issued. A message
+with any such attempt in its history never re-enters either retry; only the
+one-Enter completion under `DELIVERY_UNVERIFIED` may act on it.
 
 ### `OCCUPIED`
 
-Do not directly inspect, press Enter, paste, or clear the ordinary draft. Unless
-the interrupted-send exception below applies, let the guarded retry schedule
-reclassify the pane and send only after the operator or target session
-independently clears the composer.
-
-One caller-side exception exists only after a new invocation returns `OCCUPIED`
-and that caller's immediately preceding attempt of the same retained message
-returned `DELIVERY_UNVERIFIED interrupted-before-enter`. A no-token run does not
-qualify because the caller cannot know whether Enter was issued. Unless direct
-inspection was separately disallowed, the caller may resolve the reported pane
-to the same `%pane_id`, inspect it directly and read-only, and judge whether the
-entire non-dim composer is exactly the retained message. If it is, the permitted
-action is exactly one `tmux send-keys -t <reported-%pane_id> Enter`; do not
-paste or rerun the sender. Observe the pane afterwards, but do not relabel the
-script's earlier result as `SENT`. If complete ownership is not evident, send no
-key. The script records no attempts and performs no recovery.
-
-`DELIVERY_UNVERIFIED interrupted-after-enter` never qualifies because the first
-Enter may still be pending. The interrupted-send exception deliberately leaves
-the final judgment and the capture-to-Enter race with the caller; it must not be
-used when that tradeoff is unacceptable.
+An ordinary draft is not safe: do not append to it, submit it, clear it, or
+dismiss it. If inspection is disallowed, confirms the draft, or cannot
+positively identify a misclassified clear composer, let the guarded retry
+schedule send only after the operator or target session independently clears the
+composer. Otherwise the inspection-authorized fallback applies.
 
 The `agent-relay-message` helper performs a separate automatic exception for an
 already occupied, complete Relay wake notice. Wake notices are idempotent;
@@ -170,17 +222,18 @@ normal messages are not.
 
 ### `DIALOG`
 
-Send no key, including Esc. The operator owns the dialog. Let the guarded retry
-schedule detect when the operator independently closes it; do not dismiss it to
-make delivery possible.
+A real dialog belongs to the operator: send no key, including Esc, and let the
+guarded retry schedule detect when it closes independently. If inspection
+instead positively identifies a misclassified ordinary clear composer, the
+inspection-authorized fallback applies. Its separate Esc rule covers only an
+input-mode suggestion raised by the caller's own direct paste.
 
 ### `UNKNOWN`
 
 Read-only direct inspection is allowed unless separately disallowed. For
 `UNKNOWN layout`, it may distinguish a transient client screen from a newly
-unsupported shape. Inspection does not authorize typing, bypassing the guarded
-sender, or relabeling the result. Never include pane contents in a report,
-record, or Relay message.
+unsupported shape and may share the content needed to explain that finding.
+Inspection does not by itself relabel the sender's result.
 
 - `UNKNOWN server`: correct the tmux socket or server selection before another
   attempt. Do not back off blindly.
@@ -190,10 +243,11 @@ record, or Relay message.
   absent, escalate rather than guessing another pane. This condition covers
   recovery from this result only; it does not restrict how other workflows
   obtain an address in the first place.
-- `UNKNOWN layout`: retain the message and wait for a recognized composer. Do
-  not loosen the classifier from one unfamiliar capture. Let the guarded retry
-  schedule detect whether a transient client screen returns to a recognized
-  composer.
+- `UNKNOWN layout`: do not loosen the classifier from one unfamiliar capture.
+  An inspection-capable caller may use the fallback when it positively judges
+  the actual composer safe; otherwise retain the message and let the guarded
+  retry schedule detect whether a transient client screen returns to a
+  recognized composer.
 - `UNKNOWN buffer`, `UNKNOWN interrupted`, or `UNKNOWN internal`: fix or report
   the stated local failure before retrying.
 
@@ -208,18 +262,31 @@ inform the caller or operator, but a clear composer alone and message text
 anywhere on screen do not prove delivery. Out-of-band evidence such as the
 recipient's reply may.
 
+After `DELIVERY_UNVERIFIED paste-not-observed` or `interrupted-before-enter`, and
+unless direct inspection is disallowed, the caller may issue exactly one
+`tmux send-keys -t <reported-%pane_id> Enter`, without running the sender again,
+when an inspection immediately before the key shows both of these: the intended
+agent's own ordinary message composer, not a dialog, overlay, shell mode,
+permission prompt, or a view addressed to another agent; and a draft that is
+entirely the retained message, or entirely one client-native paste placeholder,
+attributable to that attempt. Stop without a key if the pane or ownership
+changed or is uncertain. Never paste the message again. This never applies after
+an Enter may already have been issued (`enter-failed`, `not-cleared`,
+`interrupted-after-enter`, `internal-error`) or after a run with no result token.
+If the composer does not clear after that Enter, send nothing further. Report
+the completion separately; do not relabel the earlier result as `SENT`.
+
 Retain the exact message file or reproducible stdin source. Escalate to the
 operator of the calling session; for a handoff, also notify the counterpart
 through Agent Relay. Report the target, UTC time, retained source, result stage,
-and stderr diagnostic. Never include pane contents in a report, record, or
-Relay message.
+stderr diagnostic, and relevant inspection findings.
 
 If the message was only a Relay wake, report that Relay accepted the durable
 payload but active wake-up is unverified. Do not resend the Relay payload.
 
 A run that produces none of the documented stdout results—because of SIGKILL, a
 host crash, or a caller-side timeout—is treated as
-`DELIVERY_UNVERIFIED` and never qualifies for the interrupted-send Enter
+`DELIVERY_UNVERIFIED` and never qualifies for the inspected one-Enter
 exception. A timeout wrapper must allow longer than the two
 3.15-second verification windows plus tmux command time.
 
