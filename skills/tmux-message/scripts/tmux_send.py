@@ -36,6 +36,7 @@ _OUTCOME_DECIDED = False
 
 CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 OSC_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)")
+ESCAPE_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]")
 SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
 CODEX_FOOTER_RE = re.compile(r"^  \S.* · \S")
 CLAUDE_FOOTER_RE = re.compile(r"^  ⏵⏵ \S")
@@ -140,8 +141,7 @@ def _visible_with_style(
     dim = False
     foreground: tuple[int, ...] | None = None
     position = 0
-    escape_re = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]")
-    for match in escape_re.finditer(raw):
+    for match in ESCAPE_RE.finditer(raw):
         result.extend(
             (char, dim, foreground) for char in raw[position : match.start()]
         )
@@ -208,6 +208,40 @@ def _is_full_width_border(raw_line: str, pane_width: int | None) -> bool:
 def _is_plain_full_width_border(raw_line: str, pane_width: int | None) -> bool:
     visible = _visible(raw_line).rstrip()
     return _is_full_width_border(raw_line, pane_width) and set(visible) <= {"─", "━"}
+
+
+def _raw_offset_after_visible_chars(raw: str, count: int) -> int | None:
+    visible_count = 0
+    raw_position = 0
+    for match in ESCAPE_RE.finditer(raw):
+        segment_length = match.start() - raw_position
+        if visible_count + segment_length >= count:
+            return raw_position + count - visible_count
+        visible_count += segment_length
+        raw_position = match.end()
+    if visible_count + len(raw) - raw_position >= count:
+        return raw_position + count - visible_count
+    return None
+
+
+def _capture_lines(raw: str, pane_width: int | None) -> list[str]:
+    """Undo tmux -J joining a full-width client border to its prompt row."""
+    lines: list[str] = []
+    for raw_line in raw.splitlines():
+        visible = _visible(raw_line)
+        if pane_width is not None and pane_width > 0 and len(visible) > pane_width:
+            border = visible[:pane_width]
+            joined_prompt = visible[pane_width:]
+            if (
+                set(border) <= {"─", "━"}
+                and joined_prompt.startswith(("❯", ">"))
+            ):
+                split_at = _raw_offset_after_visible_chars(raw_line, pane_width)
+                if split_at is not None:
+                    lines.extend((raw_line[:split_at], raw_line[split_at:]))
+                    continue
+        lines.append(raw_line)
+    return lines
 
 
 def _content(annotated: list[tuple[str, bool]]) -> tuple[str, bool, bool]:
@@ -585,7 +619,7 @@ def classify_capture(
     cursor_y: int | None = None,
 ) -> str:
     """Classify an ANSI-preserving capture without exposing its contents."""
-    lines = raw.splitlines()
+    lines = _capture_lines(raw, pane_width)
     if not lines:
         return UNKNOWN
     if _is_dialog(lines):
@@ -705,7 +739,7 @@ def capture_target(pane: PaneIdentity) -> CaptureResult:
             capture.stderr.strip() or "resolved pane vanished before capture",
             None,
         )
-    lines = capture.stdout.splitlines()
+    lines = _capture_lines(capture.stdout, pane.pane_width)
     cursor_x = None
     cursor_y = None
     claude_region = _claude_region(lines, pane.pane_width)

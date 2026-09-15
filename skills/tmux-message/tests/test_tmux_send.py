@@ -21,6 +21,7 @@ SPEC.loader.exec_module(tmux_send)
 
 WIDTH = 40
 BORDER = "─" * WIDTH
+STYLED_BORDER = f"\x1b[38;5;240m{BORDER}\x1b[0m"
 TEXT_FOREGROUND = "\x1b[38;2;238;238;238m"
 MUTED_FOREGROUND = "\x1b[38;2;128;128;128m"
 RESET_STYLE = "\x1b[0m"
@@ -31,6 +32,12 @@ def claude_capture(first: str = "", *continuations: str) -> str:
     rows.extend(f"  {row}" for row in continuations)
     rows.extend([BORDER, "  ⏵⏵ auto mode on"])
     return "\n".join(rows) + "\n"
+
+
+def claude_joined_border_capture(first: str = "") -> str:
+    return "\n".join(
+        [f"{STYLED_BORDER}❯\u00a0{first}", BORDER, "  ⏵⏵ auto mode on"]
+    ) + "\n"
 
 
 def claude_capture_with_background_agents(
@@ -66,6 +73,17 @@ def agy_capture(first: str = "", *continuations: str) -> str:
     footer = "  ? for shortcuts".ljust(22) + "Gemini 3.8 Flash · high"
     rows.extend([BORDER, footer])
     return "\n".join(rows) + "\n"
+
+
+def agy_joined_border_capture(first: str = "") -> str:
+    footer = "  ? for shortcuts".ljust(22) + "Gemini 3.8 Flash · high"
+    return "\n".join(
+        [
+            f"{STYLED_BORDER}>" if not first else f"{STYLED_BORDER}> {first}",
+            BORDER,
+            footer,
+        ]
+    ) + "\n"
 
 
 def opencode_capture(
@@ -172,6 +190,20 @@ class ClassifyCaptureTests(unittest.TestCase):
     def test_claude_bare_prompt_is_clear(self) -> None:
         self.assertEqual(tmux_send.classify_capture(claude_capture(), WIDTH), "CLEAR")
 
+    def test_claude_prompt_joined_to_full_width_border_is_clear(self) -> None:
+        capture = claude_joined_border_capture()
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "CLEAR")
+
+    def test_claude_draft_joined_to_full_width_border_is_occupied(self) -> None:
+        capture = claude_joined_border_capture("queued message")
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "OCCUPIED")
+
+    def test_full_width_border_does_not_split_before_arbitrary_text(self) -> None:
+        capture = "\n".join(
+            [f"{BORDER}ordinary output", BORDER, "  ⏵⏵ auto mode on"]
+        ) + "\n"
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
+
     def test_claude_background_agent_panel_accepts_clear_composer(self) -> None:
         for agent_count in (1, 3):
             with self.subTest(agent_count=agent_count):
@@ -239,6 +271,10 @@ class ClassifyCaptureTests(unittest.TestCase):
 
     def test_agy_bare_prompt_is_clear(self) -> None:
         self.assertEqual(tmux_send.classify_capture(agy_capture(), WIDTH), "CLEAR")
+
+    def test_agy_prompt_joined_to_full_width_border_is_clear(self) -> None:
+        capture = agy_joined_border_capture()
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "CLEAR")
 
     def test_agy_typed_and_multiline_drafts_are_occupied(self) -> None:
         for capture in (agy_capture("draft"), agy_capture("first", "second")):
@@ -490,6 +526,20 @@ class CaptureTargetTests(unittest.TestCase):
         self.assertEqual(actual.state, "CLEAR")
         self.assertEqual(actual.composer.client, "claude")
         self.assertEqual(call.call_args_list[1].args[0], "display-message")
+
+    def test_joined_claude_border_returns_the_normalized_composer(self) -> None:
+        with mock.patch.object(
+            tmux_send,
+            "_tmux",
+            return_value=self.completed(claude_joined_border_capture()),
+        ) as call:
+            actual = tmux_send.capture_target(pane())
+        self.assertEqual(actual.state, "CLEAR")
+        self.assertEqual(actual.composer.client, "claude")
+        self.assertEqual(
+            call.call_args.args,
+            ("capture-pane", "-p", "-e", "-J", "-t", "%7"),
+        )
 
     def test_opencode_invalid_cursor_position_fails_closed(self) -> None:
         capture, _cursor_x, _cursor_y = opencode_capture()

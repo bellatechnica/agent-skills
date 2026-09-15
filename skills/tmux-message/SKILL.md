@@ -229,6 +229,11 @@ The script captures ANSI attributes and joins soft-wrapped terminal rows:
 
     tmux capture-pane -p -e -J -t <pinned-pane-id>
 
+When tmux marks a pane-width Claude Code or Antigravity CLI border as soft
+wrapped into the following prompt row, the script separates that exact
+border-plus-prompt boundary before classification. Other overlong rows remain
+unchanged.
+
 It recognizes only anchored Claude Code, Codex, Antigravity CLI, and OpenCode
 composer regions. The Antigravity CLI 1.1.27 and OpenCode 1.18.31 shapes were
 live-checked on 2026-09-14:
