@@ -199,9 +199,12 @@ class ClassifyCaptureTests(unittest.TestCase):
         self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "OCCUPIED")
 
     def test_full_width_border_does_not_split_before_arbitrary_text(self) -> None:
-        capture = "\n".join(
-            [f"{BORDER}ordinary output", BORDER, "  ⏵⏵ auto mode on"]
-        ) + "\n"
+        joined = f"{BORDER}ordinary output"
+        capture = "\n".join([joined, BORDER, "  ⏵⏵ auto mode on"]) + "\n"
+        self.assertEqual(
+            tmux_send._capture_lines(capture, WIDTH),
+            [joined, BORDER, "  ⏵⏵ auto mode on"],
+        )
         self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
 
     def test_claude_background_agent_panel_accepts_clear_composer(self) -> None:
