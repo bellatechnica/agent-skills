@@ -198,6 +198,67 @@ class ClassifyCaptureTests(unittest.TestCase):
         capture = claude_joined_border_capture("queued message")
         self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "OCCUPIED")
 
+    def test_claude_joined_bottom_border_ignores_one_shell_status(self) -> None:
+        status = (
+            "  ⏵⏵ bypass permissions on · 1 shell · ← for agents · ↓ to manage"
+        )
+        capture = "\n".join([BORDER, "❯\u00a0", f"{BORDER}{status}"]) + "\n"
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, 2, 1),
+            "CLEAR",
+        )
+
+    def test_claude_other_status_wording_does_not_control_clear_composer(self) -> None:
+        capture = "\n".join(
+            [BORDER, "❯\u00a0", BORDER, "  future status · 7 background jobs"]
+        ) + "\n"
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, 2, 1),
+            "CLEAR",
+        )
+
+    def test_claude_status_variants_keep_draft_occupied(self) -> None:
+        captures = (
+            "\n".join(
+                [
+                    BORDER,
+                    "❯\u00a0queued wake",
+                    f"{BORDER}  ⏵⏵ bypass permissions on · 1 shell",
+                ]
+            )
+            + "\n",
+            "\n".join(
+                [
+                    BORDER,
+                    "❯\u00a0queued wake",
+                    BORDER,
+                    "  future status · 7 background jobs",
+                ]
+            )
+            + "\n",
+        )
+        for capture in captures:
+            with self.subTest(capture=capture):
+                self.assertEqual(
+                    tmux_send.classify_capture(capture, WIDTH, 14, 1),
+                    "OCCUPIED",
+                )
+
+    def test_claude_status_is_ignored_but_dialog_still_refuses(self) -> None:
+        capture = "\n".join(
+            [
+                BORDER,
+                "❯\u00a0",
+                BORDER,
+                "  future status · 7 background jobs",
+                "Enter to confirm · Esc to cancel",
+            ]
+        ) + "\n"
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, 2, 1),
+            "DIALOG",
+        )
+
     def test_full_width_border_does_not_split_before_arbitrary_text(self) -> None:
         joined = f"{BORDER}ordinary output"
         capture = "\n".join([joined, BORDER, "  ⏵⏵ auto mode on"]) + "\n"
@@ -455,7 +516,10 @@ class ClassifyCaptureTests(unittest.TestCase):
 
     def test_historical_claude_composer_before_active_output_is_unknown(self) -> None:
         capture = claude_capture() + "• Working (1s • esc to interrupt)\n"
-        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, 0, 4),
+            "UNKNOWN",
+        )
 
     def test_passive_toast_above_clear_composer_is_clear(self) -> None:
         capture = "How is Claude doing? 1: Bad 2: Fine 3: Good\n" + claude_capture()
@@ -531,18 +595,19 @@ class CaptureTargetTests(unittest.TestCase):
         self.assertEqual(call.call_args_list[1].args[0], "display-message")
 
     def test_joined_claude_border_returns_the_normalized_composer(self) -> None:
-        with mock.patch.object(
-            tmux_send,
-            "_tmux",
-            return_value=self.completed(claude_joined_border_capture()),
-        ) as call:
+        responses = (
+            self.completed(claude_joined_border_capture()),
+            self.completed("2\t1\n"),
+        )
+        with mock.patch.object(tmux_send, "_tmux", side_effect=responses) as call:
             actual = tmux_send.capture_target(pane())
         self.assertEqual(actual.state, "CLEAR")
         self.assertEqual(actual.composer.client, "claude")
         self.assertEqual(
-            call.call_args.args,
+            call.call_args_list[0].args,
             ("capture-pane", "-p", "-e", "-J", "-t", "%7"),
         )
+        self.assertEqual(call.call_args_list[1].args[0], "display-message")
 
     def test_opencode_invalid_cursor_position_fails_closed(self) -> None:
         capture, _cursor_x, _cursor_y = opencode_capture()

@@ -39,7 +39,7 @@ OSC_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)")
 ESCAPE_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]")
 SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
 CODEX_FOOTER_RE = re.compile(r"^  \S.* · \S")
-CLAUDE_FOOTER_RE = re.compile(r"^  ⏵⏵ \S")
+CLAUDE_PANEL_ROW_RE = re.compile(r"^\s*[●◯](?:\s|$)")
 CLAUDE_SELECTED_PANEL_RE = re.compile(r"^\s*●(?:\s|$)")
 CLAUDE_MAIN_SELECTED_RE = re.compile(r"^\s*●\s+main(?:\s|$)")
 CLAUDE_AGENT_MESSAGE_RE = re.compile(r"^Message @")
@@ -210,6 +210,15 @@ def _is_plain_full_width_border(raw_line: str, pane_width: int | None) -> bool:
     return _is_full_width_border(raw_line, pane_width) and set(visible) <= {"─", "━"}
 
 
+def _has_plain_full_width_border_prefix(
+    raw_line: str, pane_width: int | None
+) -> bool:
+    visible = _visible(raw_line)
+    border_length = len(visible) - len(visible.lstrip("─━"))
+    minimum = 8 if pane_width is None else max(pane_width - 1, 1)
+    return border_length >= minimum
+
+
 def _raw_offset_after_visible_chars(raw: str, count: int) -> int | None:
     visible_count = 0
     raw_position = 0
@@ -294,7 +303,7 @@ def _claude_region(
 ) -> ClaudeRegion | None:
     bottom = None
     for index in range(len(lines) - 1, -1, -1):
-        if _is_plain_full_width_border(lines[index], pane_width):
+        if _has_plain_full_width_border_prefix(lines[index], pane_width):
             bottom = index
             break
     if bottom is None:
@@ -303,8 +312,9 @@ def _claude_region(
     trailing_nonblank = [
         _visible(line).rstrip() for line in lines[bottom + 1 :] if _visible(line).strip()
     ]
-    if not trailing_nonblank or not CLAUDE_FOOTER_RE.match(trailing_nonblank[0]):
-        return None
+    trailing_panel = tuple(
+        row for row in trailing_nonblank if CLAUDE_PANEL_ROW_RE.match(row)
+    )
 
     top = None
     for index in range(bottom - 1, -1, -1):
@@ -314,7 +324,7 @@ def _claude_region(
     if top is None:
         return None
 
-    return ClaudeRegion(top, bottom, tuple(trailing_nonblank[1:]))
+    return ClaudeRegion(top, bottom, trailing_panel)
 
 
 def _claude_composer(
@@ -325,8 +335,10 @@ def _claude_composer(
     bounds = _claude_region(lines, pane_width)
     if bounds is None:
         return None
+    if cursor_y is not None and not (bounds.top < cursor_y < bounds.bottom):
+        return None
     if bounds.trailing_panel:
-        if not (cursor_y is not None and bounds.top < cursor_y < bounds.bottom):
+        if cursor_y is None:
             return None
         selected_rows = [
             row for row in bounds.trailing_panel if CLAUDE_SELECTED_PANEL_RE.match(row)
@@ -743,9 +755,7 @@ def capture_target(pane: PaneIdentity) -> CaptureResult:
     cursor_x = None
     cursor_y = None
     claude_region = _claude_region(lines, pane.pane_width)
-    if _opencode_region(lines) is not None or (
-        claude_region is not None and claude_region.trailing_panel
-    ):
+    if _opencode_region(lines) is not None or claude_region is not None:
         cursor = _tmux(
             "display-message",
             "-p",
