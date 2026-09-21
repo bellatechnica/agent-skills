@@ -259,6 +259,31 @@ class ClassifyCaptureTests(unittest.TestCase):
             "DIALOG",
         )
 
+    def test_claude_cursor_mapping_restores_joined_rows_above_composer(self) -> None:
+        transcript = "x" * (WIDTH + 18)
+        capture = transcript + "\n" + claude_capture()
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, 2, 3),
+            "CLEAR",
+        )
+
+    def test_claude_cursor_mapping_counts_wide_terminal_columns(self) -> None:
+        transcript = "界" * WIDTH
+        capture = transcript + "\n" + claude_capture()
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, 2, 3),
+            "CLEAR",
+        )
+
+    def test_claude_agent_message_without_panel_is_unknown(self) -> None:
+        capture = claude_capture(
+            "\x1b[2mMessage @general-purpose…\x1b[0m"
+        )
+        self.assertEqual(
+            tmux_send.classify_capture(capture, WIDTH, 2, 1),
+            "UNKNOWN",
+        )
+
     def test_full_width_border_does_not_split_before_arbitrary_text(self) -> None:
         joined = f"{BORDER}ordinary output"
         capture = "\n".join([joined, BORDER, "  ⏵⏵ auto mode on"]) + "\n"

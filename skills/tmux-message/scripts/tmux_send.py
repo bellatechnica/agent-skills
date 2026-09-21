@@ -219,6 +219,28 @@ def _has_plain_full_width_border_prefix(
     return border_length >= minimum
 
 
+def _display_width(raw_line: str) -> int:
+    width = 0
+    for char in _visible(raw_line):
+        category = unicodedata.category(char)
+        if unicodedata.combining(char) or category in ("Cc", "Cf"):
+            continue
+        width += 2 if unicodedata.east_asian_width(char) in ("W", "F") else 1
+    return width
+
+
+def _screen_row(
+    lines: list[str], capture_index: int, pane_width: int | None
+) -> int:
+    if pane_width is None or pane_width <= 0:
+        return capture_index
+    extra_rows = sum(
+        (max(_display_width(line), 1) - 1) // pane_width
+        for line in lines[:capture_index]
+    )
+    return capture_index + extra_rows
+
+
 def _raw_offset_after_visible_chars(raw: str, count: int) -> int | None:
     visible_count = 0
     raw_position = 0
@@ -335,8 +357,11 @@ def _claude_composer(
     bounds = _claude_region(lines, pane_width)
     if bounds is None:
         return None
-    if cursor_y is not None and not (bounds.top < cursor_y < bounds.bottom):
-        return None
+    if cursor_y is not None:
+        screen_top = _screen_row(lines, bounds.top, pane_width)
+        screen_bottom = _screen_row(lines, bounds.bottom, pane_width)
+        if not (screen_top < cursor_y < screen_bottom):
+            return None
     if bounds.trailing_panel:
         if cursor_y is None:
             return None
@@ -373,7 +398,7 @@ def _claude_composer(
         has_dim = has_dim or continuation[1]
         has_non_dim = has_non_dim or continuation[2]
     text = "\n".join(text_lines)
-    if bounds.trailing_panel and CLAUDE_AGENT_MESSAGE_RE.match(text):
+    if CLAUDE_AGENT_MESSAGE_RE.match(text):
         return None
     return Composer("claude", text, has_dim, has_non_dim)
 
