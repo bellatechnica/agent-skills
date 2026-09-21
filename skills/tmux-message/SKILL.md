@@ -325,13 +325,15 @@ live-checked on 2026-09-14:
 - Claude Code requires full-width top and bottom borders and one column-zero
   `❯` prompt inside them. Clear-versus-occupied classification comes from that
   bordered composer itself; it does not depend on the wording or presence of a
-  status row below the bottom border. When one or more background subagents add
-  rows beginning with their `●`/`◯` selection markers below the composer, the
-  cursor must be inside the recognized composer, exactly one such row must carry
-  the selected marker, and that row must be `main`. A composer beginning with
-  the client-native `Message @` agent placeholder is never accepted in this
-  shape. Dialog footers and other interfaces without the bordered prompt still
-  fail closed.
+  status row below the bottom border. Live delivery also requires the terminal
+  cursor inside that composer; its row comparison restores screen rows consumed
+  by soft wrapping that `capture-pane -J` joined above or inside the composer.
+  When one or more background subagents add rows beginning with their `●`/`◯`
+  selection markers below the composer, exactly one such row must carry the
+  selected marker, and that row must be `main`. A composer beginning with the
+  client-native `Message @` agent placeholder is never accepted in this shape.
+  Dialog footers and other interfaces without the bordered prompt still fail
+  closed.
 - Codex requires one column-zero `›` prompt followed by its structural spacer
   and bottommost footer. The footer is either the model/directory summary or
   the full-width, entirely dim editing status line used while a draft is
