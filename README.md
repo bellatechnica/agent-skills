@@ -1,9 +1,54 @@
 # agent-skills
 
-Skills for agent CLIs that read a `skills/` directory of `SKILL.md` files —
-Claude Code and Codex CLI both do. Each subdirectory of `skills/` is one skill:
-a `SKILL.md` with YAML frontmatter (`name`, `description`) plus whatever
-reference files and scripts it needs.
+My personal collection of skills for coding agents. Each one teaches an agent
+CLI such as Claude Code or Codex CLI how to do one recurring job the way I
+want it done. Some skills are checklists, some are workflows, and some ship a
+script that does the job. They are written for my own setup, but none depends
+on it.
+
+## What's here
+
+**Coordinating parallel agent sessions**
+
+- `handoff` — hand a work item to a new agent session. It writes a prompt or
+  handoff doc, launches the session, and keeps a durable channel to it.
+- `tmux-message` — send one message into another agent's tmux pane. The sender
+  refuses to type into a busy or unrecognised composer, and checks that the
+  message was actually submitted.
+
+**Keeping repositories clean**
+
+- `init-repo` — set up a new project directory: git, a tailored `.gitignore`,
+  direnv, a README and a first commit.
+- `never-commit` — what must never enter git history (credentials, personal
+  identity, machine details, local paths and more), with the signal to search
+  for and the usual false positive for each.
+- `history-audit` — sweep a repository's whole history for those things and
+  price a history rewrite honestly before recommending one.
+
+**Planning**
+
+- `plan-upfront` — explore the task, surface the requirements, ask a few
+  rounds of questions, and save the approved plan before writing code.
+
+**Agent CLI housekeeping**
+
+- `token-cost` — work out what a stretch of Claude Code or Codex usage would
+  cost at API prices, from the CLI's own session logs.
+- `codex-migrate-session` — move a Codex conversation to a new workspace path
+  after a repository is moved or renamed.
+
+**Windows and WSL**
+
+- `wsl-service` — run a WSL project as a systemd service, keep WSL alive
+  without an open terminal, and expose the service to the local network.
+
+## How skills are structured
+
+Agent CLIs that read a `skills/` directory of `SKILL.md` files can use these
+skills; Claude Code and Codex CLI both do. Each subdirectory of `skills/` is
+one skill: a `SKILL.md` with YAML frontmatter (`name`, `description`) plus
+whatever reference files and scripts it needs.
 
 ## Layout
 
@@ -40,9 +85,11 @@ announces a fallback to tmux messaging rather than failing silently; if tmux
 cannot reach the other session either, it reports the blocker.
 
 The server, the `agent-relay-message` skill that drives it, and the instructions
-for running both, are in the `agent-relay` repository under the same account as
-this one. Install that skill alongside the MCP server — `handoff` delegates the
-listener protocol to it.
+for running both, are in the
+[agent-relay](https://github.com/bellatechnica/agent-relay) repository.
+Install that skill alongside the MCP server. `handoff` relies on it for the
+listener protocol and for wake notices, and `tmux-message` follows its fixed
+format for those notices.
 
 ## Adding a skill
 
