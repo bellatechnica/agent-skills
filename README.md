@@ -66,7 +66,7 @@ by `.gitignore`, so they are present on the machine and invisible to git.
 Clone the repository, then point the agent's skills directory at it. Back up or
 merge anything already there first — this replaces the directory:
 
-    git clone <remote> ~/src/agent-skills
+    git clone https://github.com/bellatechnica/agent-skills.git ~/src/agent-skills
     mv ~/.claude/skills ~/.claude/skills.bak     # if it exists and holds anything
     ln -s ~/src/agent-skills/skills ~/.claude/skills
 
