@@ -115,3 +115,7 @@ what `git clean -xdf` deletes, without a prompt and without a way back. They are
 not in the history, so nothing in git can restore them. Take a copy of `skills/`
 before any cleaning operation, or run `git clean` with `--dry-run` first and read
 what it plans to remove.
+
+## License
+
+Copyright 2026 Bella Technica. Licensed under the [Apache License 2.0](LICENSE).
