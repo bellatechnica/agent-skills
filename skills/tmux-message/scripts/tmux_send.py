@@ -46,13 +46,11 @@ CLAUDE_AGENT_MESSAGE_RE = re.compile(r"^Message @")
 AGY_FOOTER_RE = re.compile(r".*\S · (?:low|medium|high)$", re.IGNORECASE)
 CURSOR_MODE_ROW_RE = re.compile(r"^  \S.* \(shift\+tab to cycle\)$")
 CURSOR_TEXT_COLUMN = 4
-# Text the Cursor CLI draws above its composer while another control owns the
-# keyboard: a queued follow-up open for editing (the composer still shows its
-# placeholder, unfocused) and a tool-approval prompt with its option hints.
-CURSOR_OVERLAY_RE = re.compile(
-    r"Waiting for approval|editing · enter done|"
-    r"\((?:y|n|p|tab|shift\+tab|esc or n)\)$"
-)
+# The row the Cursor CLI draws inside its follow-ups panel, above the composer,
+# while a queued entry is open for editing. Input then belongs to the panel and
+# the composer is drawn unfocused. Anchored to the panel's side border so the
+# same words in conversation history do not match.
+CURSOR_EDITING_ROW_RE = re.compile(r"^│ +editing · enter done")
 CLAUDE_PASTE_PLACEHOLDER_RE = re.compile(
     r"\[(?:Pasted text #\d+(?: \+\d+ lines)?|\.\.\.Truncated text #\d+ \+\d+ lines\.\.\.)\]"
 )
@@ -716,7 +714,7 @@ def _cursor_dialog(lines: list[str]) -> bool:
     if block is None:
         return False
     return any(
-        CURSOR_OVERLAY_RE.search(_visible(line).rstrip())
+        CURSOR_EDITING_ROW_RE.match(_visible(line).lstrip())
         for line in lines[: block[0]]
     )
 

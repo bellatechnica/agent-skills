@@ -756,6 +756,16 @@ class CursorClassificationTests(unittest.TestCase):
         self.assertNotEqual(unfocused, capture)
         self.assertEqual(tmux_send.classify_capture(unfocused, WIDTH), "DIALOG")
 
+    def test_control_text_in_conversation_history_does_not_refuse(self) -> None:
+        history = (
+            "  Waiting for approval",
+            "  editing · enter done · esc close",
+            "  Run (once) (y)",
+            "",
+        )
+        capture = cursor_capture(above=history)
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "CLEAR")
+
     def test_unfocused_placeholder_alone_fails_closed(self) -> None:
         capture = cursor_capture(placeholder="Add a follow-up").replace(
             "\x1b[2m→ \x1b[0;7m\x1b[48;5;233mA\x1b[0;2m\x1b[48;5;233mdd a follow-up",
@@ -777,9 +787,6 @@ class CursorClassificationTests(unittest.TestCase):
         # As drawn by the Cursor CLI: the prompt replaces the composer.
         replaced = "\n".join(approval) + "\n"
         self.assertEqual(tmux_send.classify_capture(replaced, WIDTH), "UNKNOWN")
-        # If a rendering kept the composer and footer, the option hints refuse.
-        kept = cursor_capture(above=(*approval, ""))
-        self.assertEqual(tmux_send.classify_capture(kept, WIDTH), "DIALOG")
 
     def test_blank_or_clipped_composer_never_reads_as_clear(self) -> None:
         capture = cursor_capture("", "", "")

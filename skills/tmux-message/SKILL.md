@@ -369,13 +369,13 @@ shapes were live-checked on 2026-09-14, and the Cursor CLI 2026.10.01 and
   all-dim composer without that reverse-video character is an unfocused
   placeholder and is `UNKNOWN layout`, as is a composer block with no visible
   character (hidden or clipped draft text). A picker or the workspace-trust
-  prompt ends with an `Enter to select` footer and is `DIALOG`. A row above the
-  composer saying `Waiting for approval`, `editing · enter done`, or ending in
-  one of the approval option hints (`(y)`, `(n)`, `(p)`, `(tab)`,
-  `(shift+tab)`, `(esc or n)`) marks another control as owning the keyboard and
-  is `DIALOG`. Those strings come from the Cursor CLI 2026.10.01 bundle; the
-  tool-approval prompt itself replaces the composer on screen, so it is
-  `UNKNOWN layout`. Any other change to the bottom of the screen, including
+  prompt ends with an `Enter to select` footer and is `DIALOG`. A row inside the
+  follow-ups panel above the composer reading `editing · enter done` means a
+  queued entry is open for editing and input belongs to the panel, so it is
+  `DIALOG`; the same words elsewhere in the conversation do not match. The
+  tool-approval prompt (`Waiting for approval`, options ending `(y)`, `(tab)`,
+  `(esc or n)`) replaces the composer on screen, so it is `UNKNOWN layout`.
+  Any other change to the bottom of the screen, including
   the transient `Press Ctrl+C again to exit` and `Run Everything: OFF`
   notices, is `UNKNOWN layout`. Interrupting a turn with Ctrl+C restores the
   interrupted prompt into the composer as a draft, which is `OCCUPIED`. The
