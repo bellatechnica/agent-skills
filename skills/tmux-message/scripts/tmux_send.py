@@ -44,6 +44,8 @@ CLAUDE_SELECTED_PANEL_RE = re.compile(r"^\s*●(?:\s|$)")
 CLAUDE_MAIN_SELECTED_RE = re.compile(r"^\s*●\s+main(?:\s|$)")
 CLAUDE_AGENT_MESSAGE_RE = re.compile(r"^Message @")
 AGY_FOOTER_RE = re.compile(r".*\S · (?:low|medium|high)$", re.IGNORECASE)
+CURSOR_MODE_ROW_RE = re.compile(r"^  \S.* \(shift\+tab to cycle\)$")
+CURSOR_TEXT_COLUMN = 4
 CLAUDE_PASTE_PLACEHOLDER_RE = re.compile(
     r"\[(?:Pasted text #\d+(?: \+\d+ lines)?|\.\.\.Truncated text #\d+ \+\d+ lines\.\.\.)\]"
 )
@@ -133,17 +135,19 @@ def _visible(raw: str) -> str:
     return CSI_RE.sub("", OSC_RE.sub("", raw))
 
 
-def _visible_with_style(
+def _visible_with_attributes(
     raw: str,
-) -> list[tuple[str, bool, tuple[int, ...] | None]]:
-    """Return visible characters with their SGR dim and foreground states."""
-    result: list[tuple[str, bool, tuple[int, ...] | None]] = []
+) -> list[tuple[str, bool, tuple[int, ...] | None, bool]]:
+    """Return visible characters with SGR dim, foreground, and reverse states."""
+    result: list[tuple[str, bool, tuple[int, ...] | None, bool]] = []
     dim = False
     foreground: tuple[int, ...] | None = None
+    reverse = False
     position = 0
     for match in ESCAPE_RE.finditer(raw):
         result.extend(
-            (char, dim, foreground) for char in raw[position : match.start()]
+            (char, dim, foreground, reverse)
+            for char in raw[position : match.start()]
         )
         sgr = SGR_RE.fullmatch(match.group())
         if sgr:
@@ -166,18 +170,35 @@ def _visible_with_style(
                 if code == 0:
                     dim = False
                     foreground = None
+                    reverse = False
                 elif code == 2:
                     dim = True
                 elif code == 22:
                     dim = False
+                elif code == 7:
+                    reverse = True
+                elif code == 27:
+                    reverse = False
                 elif 30 <= code <= 37 or 90 <= code <= 97:
                     foreground = (code,)
                 elif code == 39:
                     foreground = None
                 index += 1
         position = match.end()
-    result.extend((char, dim, foreground) for char in raw[position:])
+    result.extend(
+        (char, dim, foreground, reverse) for char in raw[position:]
+    )
     return result
+
+
+def _visible_with_style(
+    raw: str,
+) -> list[tuple[str, bool, tuple[int, ...] | None]]:
+    """Return visible characters with their SGR dim and foreground states."""
+    return [
+        (char, dim, foreground)
+        for char, dim, foreground, _reverse in _visible_with_attributes(raw)
+    ]
 
 
 def _visible_with_dim(raw: str) -> list[tuple[str, bool]]:
@@ -623,6 +644,102 @@ def _opencode_dialog(
     return _opencode_composer(lines, cursor_x, cursor_y) is None
 
 
+def _is_cursor_footer_row(raw_line: str) -> bool:
+    """Match a two-column-indented footer row whose leading text is dim."""
+    annotated = _visible_with_dim(raw_line)
+    visible = "".join(char for char, _dim in annotated)
+    if len(visible) < 3 or not visible.startswith("  ") or visible[2].isspace():
+        return False
+    return annotated[2][1]
+
+
+def _cursor_composer(lines: list[str]) -> Composer | None:
+    """Recognize the Cursor CLI composer from the footer it always sits above.
+
+    The composer is a padded block whose first row starts with an arrow at
+    column two and whose later rows are indented to the same text column. The
+    renderer hides the terminal cursor, so the structure around the block is the
+    only anchor: one blank padding row above and below the text, a blank spacer
+    row, then the model row and the workspace row as the bottommost nonblank
+    rows, optionally preceded by one mode row. A picker, dialog, or notice that
+    takes over the bottom of the screen changes those rows and fails closed.
+    """
+    nonblank = [
+        index for index, line in enumerate(lines) if _visible(line).strip()
+    ]
+    if len(nonblank) < 3:
+        return None
+    model_row, workspace_row = nonblank[-2], nonblank[-1]
+    if not (
+        workspace_row == model_row + 1
+        and _is_cursor_footer_row(lines[model_row])
+        and _is_cursor_footer_row(lines[workspace_row])
+    ):
+        return None
+    footer_top = model_row
+    if (
+        nonblank[-3] == model_row - 1
+        and CURSOR_MODE_ROW_RE.fullmatch(_visible(lines[nonblank[-3]]).rstrip())
+    ):
+        footer_top = nonblank[-3]
+    bottom_padding = footer_top - 2
+    if (
+        bottom_padding < 1
+        or _visible(lines[bottom_padding]).strip()
+        or _visible(lines[footer_top - 1]).strip()
+    ):
+        return None
+
+    prompt = None
+    for index in range(bottom_padding - 1, -1, -1):
+        visible = _visible(lines[index])
+        if visible.startswith("  →") and visible[3:4] in ("", " "):
+            prompt = index
+            break
+        if visible.strip() and not visible.startswith(" " * CURSOR_TEXT_COLUMN):
+            return None
+    if prompt is None or prompt == 0 or _visible(lines[prompt - 1]).strip():
+        return None
+
+    cells: list[list[tuple[str, bool, bool]]] = []
+    for index in range(prompt, bottom_padding):
+        annotated = _visible_with_attributes(lines[index])
+        row = [
+            (char, dim, reverse)
+            for char, dim, _foreground, reverse in annotated[CURSOR_TEXT_COLUMN:]
+        ]
+        while row and row[-1][0] == " ":
+            row.pop()
+        cells.append(row)
+    text = "\n".join("".join(char for char, _dim, _reverse in row) for row in cells)
+    content = [
+        (char, dim, reverse)
+        for row in cells
+        for char, dim, reverse in row
+        if not char.isspace()
+    ]
+    # The renderer shows a placeholder whenever the composer is empty, so a
+    # block with no visible character is hidden or clipped draft text.
+    if not content:
+        return None
+    has_dim = any(dim for _char, dim, _reverse in content)
+    has_non_dim = any(not dim for _char, dim, _reverse in content)
+    # An empty composer is a dim placeholder whose first character is redrawn
+    # in reverse video as the hidden cursor's stand-in. That character is not
+    # typed text, but only when the rest of the placeholder is dim and there is
+    # a rest: a one-character draft under the cursor looks the same up to here.
+    if (
+        len(cells) == 1
+        and len(content) > 1
+        and not cells[0][0][0].isspace()
+        and cells[0][0][2]
+        and not cells[0][0][1]
+        and all(dim and not reverse for _char, dim, reverse in content[1:])
+    ):
+        has_non_dim = False
+    return Composer("cursor", text, has_dim, has_non_dim)
+
+
 def _composer(
     lines: list[str],
     pane_width: int | None,
@@ -634,6 +751,7 @@ def _composer(
         or _agy_composer(lines, pane_width)
         or _codex_composer(lines, pane_width)
         or _opencode_composer(lines, cursor_x, cursor_y)
+        or _cursor_composer(lines)
     )
 
 

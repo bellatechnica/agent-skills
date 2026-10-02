@@ -114,6 +114,72 @@ def opencode_capture(
     return "\n".join(rows) + "\n", cursor_x, cursor_y
 
 
+CURSOR_PLACEHOLDER = "Plan, search, build anything"
+CURSOR_HOST_BACKGROUND = "\x1b[48;5;233m"
+CURSOR_FILLED_BACKGROUND = "\x1b[48;2;21;21;21m"
+
+
+def cursor_capture(
+    first: str | None = None,
+    *continuations: str,
+    placeholder: str = CURSOR_PLACEHOLDER,
+    mode_row: str | None = None,
+    above: tuple[str, ...] = (),
+    below: tuple[str, ...] = (),
+) -> str:
+    """Rows as the Cursor CLI 2026.10.01 draws them under capture-pane -e -J."""
+    bg = CURSOR_HOST_BACKGROUND
+    if first is None:
+        prompt = (
+            f"\x1b[49m {bg} \x1b[2m→ \x1b[0;7m{bg}{placeholder[0]}"
+            f"\x1b[0;2m{bg}{placeholder[1:]}\x1b[0m{bg}"
+        )
+    else:
+        prompt = f"\x1b[49m {bg} → {first}\x1b[7m \x1b[0m{bg}"
+    rows = [*above, f"\x1b[0m {bg}", prompt]
+    rows.extend(f"\x1b[49m {bg}   {row}" for row in continuations)
+    rows.extend([f"\x1b[49m {bg}", ""])
+    if mode_row is not None:
+        rows.append(f"\x1b[49m  \x1b[33m{mode_row}")
+    rows.extend(
+        [
+            "\x1b[49m  \x1b[2mGrok 4.7 256K Low · MAX",
+            "\x1b[0m  \x1b[2m/work/project",
+            *below,
+        ]
+    )
+    return "\n".join(rows) + "\n"
+
+
+def cursor_filled_capture(
+    first: str | None = None,
+    *,
+    hint: str = "",
+    above: tuple[str, ...] = (),
+) -> str:
+    """Rows as the Cursor CLI 2026.09.18 draws them: full-width background fill."""
+    bg = CURSOR_FILLED_BACKGROUND
+    fill = " " * (WIDTH - 1)
+    if first is None:
+        text = (
+            f"\x1b[2m→ \x1b[0;7m{bg}A\x1b[0;2m{bg}dd a follow-up"
+            + (f"\x1b[0m{bg}  \x1b[2m{hint}" if hint else "")
+            + f"\x1b[0m{bg} \x1b[49m"
+        )
+    else:
+        text = f"→ {first}\x1b[7m \x1b[0m{bg}  \x1b[49m"
+    rows = [
+        *above,
+        f"\x1b[39m {bg}{fill}\x1b[49m",
+        f" {bg} {text}",
+        f" {bg}{fill}\x1b[49m",
+        "",
+        "  \x1b[2mGrok 4.7 256K Low\x1b[0m" + " " * 8 + "\x1b[35mRun Everything",
+        "\x1b[39m  \x1b[2m/work/project\x1b[0m",
+    ]
+    return "\n".join(rows) + "\n"
+
+
 def pane() -> object:
     return tmux_send.PaneIdentity("%7", "777", WIDTH, "/tmp/tmux.sock", "123", "s:w.0")
 
@@ -588,6 +654,166 @@ class ClassifyCaptureTests(unittest.TestCase):
         )
         composer = tmux_send._composer(capture.splitlines(), WIDTH)
         self.assertEqual(composer.text, content)
+
+
+class CursorClassificationTests(unittest.TestCase):
+    def composer(self, capture: str) -> object:
+        return tmux_send._composer(
+            tmux_send._capture_lines(capture, WIDTH), WIDTH
+        )
+
+    def test_empty_composer_is_clear_in_both_renderings(self) -> None:
+        captures = (
+            cursor_capture(),
+            cursor_filled_capture(),
+            cursor_capture(mode_row="Plan (shift+tab to cycle)"),
+        )
+        for capture in captures:
+            with self.subTest(capture=capture):
+                self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "CLEAR")
+                composer = self.composer(capture)
+                self.assertEqual(composer.client, "cursor")
+                self.assertTrue(composer.has_dim_text)
+                self.assertFalse(composer.has_non_dim_text)
+
+    def test_follow_up_placeholder_with_stop_hint_during_a_turn_is_clear(self) -> None:
+        above = (
+            "\x1b[33m┌─ follow-ups ──────────────┐",
+            "\x1b[32m⠠⠜ \x1b[1m\x1b[39mWorking\x1b[0m",
+            "",
+        )
+        capture = cursor_filled_capture(hint="ctrl+c to stop", above=above)
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "CLEAR")
+        self.assertIn("ctrl+c to stop", self.composer(capture).text)
+
+    def test_drafts_are_occupied_and_reconstructed_exactly(self) -> None:
+        for capture, expected in (
+            (cursor_capture("draft"), "draft"),
+            (cursor_capture("first", "second", ""), "first\nsecond\n"),
+            (cursor_filled_capture("draft"), "draft"),
+        ):
+            with self.subTest(expected=expected):
+                self.assertEqual(
+                    tmux_send.classify_capture(capture, WIDTH), "OCCUPIED"
+                )
+                self.assertEqual(self.composer(capture).text, expected)
+
+    def test_draft_under_the_cursor_is_not_mistaken_for_a_placeholder(self) -> None:
+        bg = CURSOR_HOST_BACKGROUND
+        drafts = (
+            f"\x1b[49m {bg} → \x1b[7mx\x1b[0m{bg}",
+            f"\x1b[49m {bg} → \x1b[7mh\x1b[0m{bg}ello",
+            f"\x1b[49m {bg} → \x1b[7mP\x1b[0m{bg}lan, search, build anything",
+        )
+        for prompt in drafts:
+            capture = cursor_capture().replace(
+                cursor_capture().splitlines()[1], prompt
+            )
+            with self.subTest(prompt=prompt):
+                self.assertEqual(
+                    tmux_send.classify_capture(capture, WIDTH), "OCCUPIED"
+                )
+
+    def test_draft_under_the_cursor_beside_a_dim_hint_is_occupied(self) -> None:
+        bg = CURSOR_FILLED_BACKGROUND
+        capture = cursor_filled_capture().replace(
+            f"\x1b[2m→ \x1b[0;7m{bg}A\x1b[0;2m{bg}dd a follow-up",
+            f"→ \x1b[7mh\x1b[0m{bg}ello\x1b[2m   ctrl+c to stop",
+        )
+        self.assertNotEqual(capture, cursor_filled_capture())
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "OCCUPIED")
+
+    def test_blank_or_clipped_composer_never_reads_as_clear(self) -> None:
+        capture = cursor_capture("", "", "")
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
+
+    def test_pickers_and_dialogs_are_dialogs_even_with_a_clear_composer_above(
+        self,
+    ) -> None:
+        picker = cursor_capture().splitlines()[:-3] + [
+            " \x1b[2mAvailable models\x1b[0m",
+            "    Auto",
+            " \x1b[2mType to filter • Enter to select • Tab to edit",
+        ]
+        trust = [
+            "  \x1b[1m\x1b[33m⚠ Workspace Trust Required\x1b[0m",
+            "  \x1b[2mUse arrow keys to navigate, Enter to select, or press the key shown",
+        ]
+        for rows in (picker, trust):
+            with self.subTest(rows=rows[-1]):
+                self.assertEqual(
+                    tmux_send.classify_capture("\n".join(rows) + "\n", WIDTH),
+                    "DIALOG",
+                )
+
+    def test_a_changed_bottom_of_the_screen_fails_closed(self) -> None:
+        cases = {
+            "exit hint replaces the footer": (
+                cursor_capture().splitlines()[:-2] + ["  \x1b[2mPress Ctrl+C again to exit"]
+            ),
+            "notice below the footer": (
+                cursor_capture(below=("", "  \x1b[2mRun Everything: OFF")).splitlines()
+            ),
+            "slash menu below the composer": (
+                cursor_capture("/").splitlines()[:-2]
+                + ["  → /model [filter]    Select model", "    /goal [objective]"]
+            ),
+            "no padding row above the prompt": cursor_capture().splitlines()[1:],
+            "footer rows not adjacent": (
+                cursor_capture().splitlines()[:-1]
+                + ["", "  \x1b[2m/work/project"]
+            ),
+            "text where the spacer row belongs": [
+                "  \x1b[2mstray output" if not row and index == 3 else row
+                for index, row in enumerate(cursor_capture().splitlines())
+            ],
+            "text in the bottom padding row": [
+                "    stray" if index == 2 else row
+                for index, row in enumerate(cursor_capture().splitlines())
+            ],
+            "plain model row": [
+                row.replace("\x1b[2mGrok", "Grok")
+                for row in cursor_capture().splitlines()
+            ],
+            "plain workspace row": [
+                row.replace("\x1b[2m/work", "/work")
+                for row in cursor_capture().splitlines()
+            ],
+        }
+        for name, rows in cases.items():
+            with self.subTest(name=name):
+                self.assertEqual(
+                    tmux_send.classify_capture("\n".join(rows) + "\n", WIDTH),
+                    "UNKNOWN",
+                )
+
+    def test_other_clients_keep_their_recognizers(self) -> None:
+        self.assertEqual(self.composer(codex_capture()).client, "codex")
+        self.assertEqual(self.composer(claude_capture()).client, "claude")
+        self.assertEqual(self.composer(agy_capture()).client, "agy")
+
+    def test_cursor_shaped_text_without_the_footer_is_not_a_composer(self) -> None:
+        capture = "\n\n  → just some output\n\n"
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
+
+    def test_capture_target_needs_no_cursor_position(self) -> None:
+        response = mock.Mock(returncode=0, stdout=cursor_capture(), stderr="")
+        with mock.patch.object(tmux_send, "_tmux", side_effect=(response,)) as call:
+            actual = tmux_send.capture_target(pane())
+        self.assertEqual(actual.state, "CLEAR")
+        self.assertEqual(actual.composer.client, "cursor")
+        self.assertEqual(call.call_count, 1)
+
+    def test_submit_is_verified_by_a_changed_placeholder(self) -> None:
+        processed = tmux_send.CaptureResult(
+            "OCCUPIED", "", "", self.composer(cursor_capture("From x: hi"))
+        )
+        after = tmux_send.CaptureResult(
+            "CLEAR", "", "", self.composer(cursor_filled_capture(hint="ctrl+c to stop"))
+        )
+        self.assertTrue(tmux_send._paste_processed(processed, self.composer(cursor_capture())))
+        self.assertTrue(tmux_send._submit_cleared(after, processed))
+        self.assertFalse(tmux_send._submit_cleared(processed, processed))
 
 
 class CaptureTargetTests(unittest.TestCase):

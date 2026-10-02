@@ -1,6 +1,6 @@
 ---
 name: tmux-message
-description: Deliver one message to a Claude Code, Codex, Antigravity CLI, or OpenCode tmux pane through a fail-closed sender that pins the pane, classifies its composer, uses bracketed paste, and verifies a positive submit transition. Use whenever pinging, replying to, or handing something to a session in another tmux pane, including merge requests, verdicts, handoff prompts, status pings, and Agent Relay wake notices.
+description: Deliver one message to a Claude Code, Codex, Antigravity CLI, OpenCode, or Cursor CLI tmux pane through a fail-closed sender that pins the pane, classifies its composer, uses bracketed paste, and verifies a positive submit transition. Use whenever pinging, replying to, or handing something to a session in another tmux pane, including merge requests, verdicts, handoff prompts, status pings, and Agent Relay wake notices.
 ---
 
 # Message another session through tmux
@@ -39,6 +39,9 @@ distinguish a confirmed pre-send refusal from an uncertain attempt.
   a steering message. The sender uses the client's ordinary Enter action; it
   does not change that message into OpenCode's separately queued Alt+Enter
   action.
+- The Cursor CLI queues text submitted during an active turn as a follow-up,
+  listed in a panel above the composer, rather than interrupting the turn. A
+  message sent to a busy Cursor pane is therefore queued behind the current turn.
 
 ## Supply the exact message
 
@@ -318,9 +321,10 @@ wrapped into the following prompt row, the script separates that exact
 border-plus-prompt boundary before classification. Other overlong rows remain
 unchanged.
 
-It recognizes only anchored Claude Code, Codex, Antigravity CLI, and OpenCode
-composer regions. The Antigravity CLI 1.1.27 and OpenCode 1.18.31 shapes were
-live-checked on 2026-09-14:
+It recognizes only anchored Claude Code, Codex, Antigravity CLI, OpenCode, and
+Cursor CLI composer regions. The Antigravity CLI 1.1.27 and OpenCode 1.18.31
+shapes were live-checked on 2026-09-14, and the Cursor CLI 2026.10.01 and
+2026.09.18 shapes on 2026-10-02:
 
 - Claude Code requires full-width top and bottom borders and one column-zero
   `❯` prompt inside them. Clear-versus-occupied classification comes from that
@@ -351,6 +355,26 @@ live-checked on 2026-09-14:
   prompt, with either the ASCII or Unicode ellipsis and the same foreground
   color as the muted `commands` hint, is replaceable. The same words in the
   normal input color are a real draft. `Run a command` is never replaceable.
+- Cursor CLI hides the terminal cursor, so its composer is anchored by the rows
+  around it. The bottommost nonblank rows must be two adjacent rows indented two
+  columns whose text is dim (the model row and the workspace row), optionally
+  preceded by one `(shift+tab to cycle)` mode row. Above them must be a blank
+  spacer row and a blank padding row, then the composer rows, then a blank
+  padding row. The first composer row starts with `→` at column two and later
+  rows are indented to the same text column. An empty composer is a dim
+  placeholder (`Plan, search, build anything`, or `Add a follow-up` while a
+  turn runs, optionally followed by a dim `ctrl+c to stop`) whose first
+  character is redrawn in reverse video as the hidden cursor; that one
+  character is not typed text, but only when everything after it is dim. A
+  composer block with no visible character is hidden or clipped draft text and
+  is `UNKNOWN layout`. A picker or the workspace-trust prompt ends with an
+  `Enter to select` footer and is `DIALOG`; any other change to the bottom of
+  the screen, including the transient `Press Ctrl+C again to exit` and
+  `Run Everything: OFF` notices, is `UNKNOWN layout`. Interrupting a turn with
+  Ctrl+C restores the interrupted prompt into the composer as a draft, which is
+  `OCCUPIED`. Not observed, so not specially handled: a tool-approval prompt
+  during a turn. It is expected to replace the composer, which fails closed,
+  but a rendering that leaves the composer and footer visible would be accepted.
 - Continuation rows require the clients' two-column continuation indentation.
   Quoted or pasted prompt and border glyphs inside a draft do not become
   structural markers.
