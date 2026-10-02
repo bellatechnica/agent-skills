@@ -723,6 +723,64 @@ class CursorClassificationTests(unittest.TestCase):
         self.assertNotEqual(capture, cursor_filled_capture())
         self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "OCCUPIED")
 
+    def test_follow_up_panel_above_an_empty_composer_leaves_it_clear(self) -> None:
+        # Live check: with this panel showing "enter steer", a guarded send
+        # still landed in the composer and queued behind the panel entries,
+        # because the sender presses Enter only after the paste made the input
+        # non-empty, and the panel's Enter action applies to an empty input.
+        above = (
+            "\x1b[33m┌─ follow-ups ─────────────┐",
+            "\x1b[33m│ \x1b[2m\x1b[39m○ queued message",
+            "\x1b[33m│ \x1b[2m\x1b[39menter steer · ↑ select/edit · esc cancel",
+            "\x1b[33m└──────────────────────────┘",
+            "",
+        )
+        capture = cursor_capture(placeholder="Add a follow-up", above=above)
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "CLEAR")
+
+    def test_editing_a_queued_follow_up_is_a_dialog(self) -> None:
+        # While the panel edits a queued entry the composer is drawn as an
+        # unfocused all-dim placeholder: no reverse-video cursor stand-in.
+        above = (
+            "\x1b[33m┌─ follow-ups ─────────────┐",
+            "\x1b[33m│ \x1b[36m› \x1b[39mqueued B\x1b[7m \x1b[0m",
+            "\x1b[33m│ \x1b[2m\x1b[39mediting · enter done · esc close",
+            "\x1b[33m└──────────────────────────┘",
+            "",
+        )
+        capture = cursor_capture(placeholder="Add a follow-up", above=above)
+        unfocused = capture.replace(
+            "\x1b[2m→ \x1b[0;7m\x1b[48;5;233mA\x1b[0;2m\x1b[48;5;233mdd a follow-up",
+            "\x1b[2m→ Add a follow-up",
+        )
+        self.assertNotEqual(unfocused, capture)
+        self.assertEqual(tmux_send.classify_capture(unfocused, WIDTH), "DIALOG")
+
+    def test_unfocused_placeholder_alone_fails_closed(self) -> None:
+        capture = cursor_capture(placeholder="Add a follow-up").replace(
+            "\x1b[2m→ \x1b[0;7m\x1b[48;5;233mA\x1b[0;2m\x1b[48;5;233mdd a follow-up",
+            "\x1b[2m→ Add a follow-up",
+        )
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
+
+    def test_tool_approval_prompt_is_never_clear(self) -> None:
+        approval = (
+            "  $ echo hi \x1b[2mWaiting for approval...",
+            "",
+            "\x1b[38;5;147m──────────────────────────────",
+            " \x1b[1m\x1b[38;5;147mRun this command?",
+            "  \x1b[38;5;147m→ \x1b[1mRun (once)\x1b[0m\x1b[38;5;147m (y)",
+            "    Add Shell(echo) to allowlist? (tab)",
+            "    Run Everything (shift+tab)",
+            "    Skip & tell the agent what to do instead (esc or n)",
+        )
+        # As drawn by the Cursor CLI: the prompt replaces the composer.
+        replaced = "\n".join(approval) + "\n"
+        self.assertEqual(tmux_send.classify_capture(replaced, WIDTH), "UNKNOWN")
+        # If a rendering kept the composer and footer, the option hints refuse.
+        kept = cursor_capture(above=(*approval, ""))
+        self.assertEqual(tmux_send.classify_capture(kept, WIDTH), "DIALOG")
+
     def test_blank_or_clipped_composer_never_reads_as_clear(self) -> None:
         capture = cursor_capture("", "", "")
         self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")

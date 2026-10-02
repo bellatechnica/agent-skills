@@ -365,16 +365,24 @@ shapes were live-checked on 2026-09-14, and the Cursor CLI 2026.10.01 and
   placeholder (`Plan, search, build anything`, or `Add a follow-up` while a
   turn runs, optionally followed by a dim `ctrl+c to stop`) whose first
   character is redrawn in reverse video as the hidden cursor; that one
-  character is not typed text, but only when everything after it is dim. A
-  composer block with no visible character is hidden or clipped draft text and
-  is `UNKNOWN layout`. A picker or the workspace-trust prompt ends with an
-  `Enter to select` footer and is `DIALOG`; any other change to the bottom of
-  the screen, including the transient `Press Ctrl+C again to exit` and
-  `Run Everything: OFF` notices, is `UNKNOWN layout`. Interrupting a turn with
-  Ctrl+C restores the interrupted prompt into the composer as a draft, which is
-  `OCCUPIED`. Not observed, so not specially handled: a tool-approval prompt
-  during a turn. It is expected to replace the composer, which fails closed,
-  but a rendering that leaves the composer and footer visible would be accepted.
+  character is not typed text, but only when everything after it is dim. An
+  all-dim composer without that reverse-video character is an unfocused
+  placeholder and is `UNKNOWN layout`, as is a composer block with no visible
+  character (hidden or clipped draft text). A picker or the workspace-trust
+  prompt ends with an `Enter to select` footer and is `DIALOG`. A row above the
+  composer saying `Waiting for approval`, `editing · enter done`, or ending in
+  one of the approval option hints (`(y)`, `(n)`, `(p)`, `(tab)`,
+  `(shift+tab)`, `(esc or n)`) marks another control as owning the keyboard and
+  is `DIALOG`. Those strings come from the Cursor CLI 2026.10.01 bundle; the
+  tool-approval prompt itself replaces the composer on screen, so it is
+  `UNKNOWN layout`. Any other change to the bottom of the screen, including
+  the transient `Press Ctrl+C again to exit` and `Run Everything: OFF`
+  notices, is `UNKNOWN layout`. Interrupting a turn with Ctrl+C restores the
+  interrupted prompt into the composer as a draft, which is `OCCUPIED`. The
+  follow-ups panel's `enter steer` hint does not block delivery: it describes
+  Enter on an empty input, and the sender presses Enter only after the paste
+  has made the input non-empty. Not observed: overlays other than those named
+  here.
 - Continuation rows require the clients' two-column continuation indentation.
   Quoted or pasted prompt and border glyphs inside a draft do not become
   structural markers.

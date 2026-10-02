@@ -46,6 +46,13 @@ CLAUDE_AGENT_MESSAGE_RE = re.compile(r"^Message @")
 AGY_FOOTER_RE = re.compile(r".*\S · (?:low|medium|high)$", re.IGNORECASE)
 CURSOR_MODE_ROW_RE = re.compile(r"^  \S.* \(shift\+tab to cycle\)$")
 CURSOR_TEXT_COLUMN = 4
+# Text the Cursor CLI draws above its composer while another control owns the
+# keyboard: a queued follow-up open for editing (the composer still shows its
+# placeholder, unfocused) and a tool-approval prompt with its option hints.
+CURSOR_OVERLAY_RE = re.compile(
+    r"Waiting for approval|editing · enter done|"
+    r"\((?:y|n|p|tab|shift\+tab|esc or n)\)$"
+)
 CLAUDE_PASTE_PLACEHOLDER_RE = re.compile(
     r"\[(?:Pasted text #\d+(?: \+\d+ lines)?|\.\.\.Truncated text #\d+ \+\d+ lines\.\.\.)\]"
 )
@@ -653,8 +660,8 @@ def _is_cursor_footer_row(raw_line: str) -> bool:
     return annotated[2][1]
 
 
-def _cursor_composer(lines: list[str]) -> Composer | None:
-    """Recognize the Cursor CLI composer from the footer it always sits above.
+def _cursor_block(lines: list[str]) -> tuple[int, int] | None:
+    """Locate the Cursor composer rows as (prompt row, bottom padding row).
 
     The composer is a padded block whose first row starts with an arrow at
     column two and whose later rows are indented to the same text column. The
@@ -700,6 +707,25 @@ def _cursor_composer(lines: list[str]) -> Composer | None:
             return None
     if prompt is None or prompt == 0 or _visible(lines[prompt - 1]).strip():
         return None
+    return prompt, bottom_padding
+
+
+def _cursor_dialog(lines: list[str]) -> bool:
+    """A Cursor composer is on screen but another control owns the keyboard."""
+    block = _cursor_block(lines)
+    if block is None:
+        return False
+    return any(
+        CURSOR_OVERLAY_RE.search(_visible(line).rstrip())
+        for line in lines[: block[0]]
+    )
+
+
+def _cursor_composer(lines: list[str]) -> Composer | None:
+    block = _cursor_block(lines)
+    if block is None or _cursor_dialog(lines):
+        return None
+    prompt, bottom_padding = block
 
     cells: list[list[tuple[str, bool, bool]]] = []
     for index in range(prompt, bottom_padding):
@@ -737,6 +763,12 @@ def _cursor_composer(lines: list[str]) -> Composer | None:
         and all(dim and not reverse for _char, dim, reverse in content[1:])
     ):
         has_non_dim = False
+    elif not has_non_dim:
+        # All-dim text without the cursor stand-in is a placeholder drawn for
+        # an unfocused composer, such as while a queued follow-up is being
+        # edited in the panel above it, where a paste would not reach the
+        # composer.
+        return None
     return Composer("cursor", text, has_dim, has_non_dim)
 
 
@@ -780,6 +812,8 @@ def classify_capture(
     if _is_dialog(lines):
         return DIALOG
     if _opencode_dialog(lines, cursor_x, cursor_y):
+        return DIALOG
+    if _cursor_dialog(lines):
         return DIALOG
     composer = _composer(lines, pane_width, cursor_x, cursor_y)
     if composer is None:
