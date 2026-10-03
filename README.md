@@ -12,6 +12,8 @@ on it.
 
 - `handoff` — hand a work item to a new agent session. It writes a prompt or
   handoff doc, launches the session, and keeps a durable channel to it.
+- `review-session` — keep an independent reviewer in a separate agent session
+  across fix rounds, closing it when the reviewed change is clean.
 - `tmux-message` — send one message into another agent's tmux pane. The sender
   refuses to type into a busy or unrecognised composer, and checks that the
   message was actually submitted.
