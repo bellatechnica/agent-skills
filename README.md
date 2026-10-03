@@ -14,6 +14,8 @@ on it.
   handoff doc, launches the session, and keeps a durable channel to it.
 - `review-session` — keep an independent reviewer in a separate agent session
   across fix rounds, closing it when the reviewed change is clean.
+- `session-message` — choose and maintain the message channel between agent
+  sessions: Relay by default, with an announced tmux preflight fallback.
 - `tmux-message` — send one message into another agent's tmux pane. The sender
   refuses to type into a busy or unrecognised composer, and checks that the
   message was actually submitted.
@@ -79,19 +81,19 @@ guaranteed.
 
 ## Agent Relay
 
-`handoff` uses Agent Relay as its default durable channel for messages between
-coding-agent sessions. It assumes the relay's `agent_relay` tools are configured
+`session-message` gives `handoff` and `review-session` one protocol for choosing
+and maintaining their channel. It uses Agent Relay as the default durable
+channel for messages between coding-agent sessions. It assumes the relay's `agent_relay` tools are configured
 in the agent CLI as a Model Context Protocol (MCP) server, and confirms that
-with a live tool call before each handoff. When that preflight fails, it
+with a live tool call before each session launch. When that preflight fails, it
 announces a fallback to tmux messaging rather than failing silently; if tmux
 cannot reach the other session either, it reports the blocker.
 
 The server, the `agent-relay-message` skill that drives it, and the instructions
 for running both, are in the
 [agent-relay](https://github.com/bellatechnica/agent-relay) repository.
-Install that skill alongside the MCP server. `handoff` relies on it for the
-listener protocol and for wake notices, and `tmux-message` follows its fixed
-format for those notices.
+Install that skill alongside the MCP server. `session-message` relies on it for
+the listener protocol and wake notices, and uses `tmux-message` for tmux delivery.
 
 ## Adding a skill
 
