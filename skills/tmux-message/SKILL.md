@@ -5,6 +5,11 @@ description: Deliver one message to a Claude Code, Codex, Antigravity CLI, OpenC
 
 # Message another session through tmux
 
+Use `session-message` to choose a native client route when addressing a session
+that has one. This skill remains the guarded tmux sender for a recipient with
+no reachable native address, unsafe native message content, or definite native
+unavailability before an attempt. Its inspection rules still apply on fallback.
+
 Keystrokes injected into another pane are indistinguishable from its operator
 typing them. Deliver each message through
 [`scripts/tmux_send.py`](scripts/tmux_send.py). A caller permitted to inspect the

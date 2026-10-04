@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Hand off a work item to a new parallel agent session, using session-message for Agent Relay or an announced tmux fallback. Default to the same assistant CLI unless the user specifies another, and launch Codex or Claude Code through codex-sbx or claude-sbx when Docker Sandbox or a settings profile is requested. Use a prompt for simple tasks, a handoff doc in a do_not_commit area for complex ones, an isolated worktree for file edits, and coordination constraints when shared resources demand them.
+description: Hand off a work item to a new parallel agent session, using session-message for Agent Relay or an announced direct fallback. Default to the same assistant CLI unless the user specifies another, and launch Codex or Claude Code through codex-sbx or claude-sbx when Docker Sandbox or a settings profile is requested. Use a prompt for simple tasks, a handoff doc in a do_not_commit area for complex ones, an isolated worktree for file edits, and coordination constraints when shared resources demand them.
 ---
 
 # Hand off work to a parallel session
@@ -18,7 +18,7 @@ Verify that the selected executable exists; if it does not, report that
 instead of silently substituting another agent.
 
 Choose the communication channel before sizing the handoff. Use
-`session-message` for Relay preflight, the announced full-tmux fallback,
+`session-message` for Relay preflight, the announced direct fallback,
 registration, listeners, conditional wake notices, and response delivery.
 Preserve its chosen channel for this handoff.
 
@@ -135,8 +135,9 @@ or think to ask about, and let the reply channel handle the rest.
   updated"), and what is safe immediately (typically: code + offline
   tests on an isolated test database; own worktree). The section must
   also name the coordination channel: both Agent Relay slugs by default, plus
-  both recovery pane addresses when the sessions share a tmux server; or the
-  spawning session's tmux pane address in full tmux mode.
+  both native recipient addresses when reachable and both recovery pane
+  addresses when the sessions share a tmux server; or both usable direct
+  addresses when Relay is unavailable.
   Fully independent work needs no coordination section — do not invent
   wait conditions.
 - **The rest by handoff type.** IMPLEMENTATION: steps with known traps
@@ -266,9 +267,11 @@ or think to ask about, and let the reply channel handle the rest.
   specified by `session-message`. Include the selected client's listener rule
   from `agent-relay-message` when Relay is selected. Resolve this session's
   pane with `tmux display-message -p -t "$TMUX_PANE" '#S:#I.#P'` and the
-  child's pane by stable window name; these are recovery addresses in
-  Relay mode and reply addresses in full-tmux mode. After launch, maintain
-  this session's listener when Relay is selected. The initial user-facing
+  child's pane by stable window name; these are tmux recovery or direct reply
+  addresses. Also exchange each reachable Codex thread UUID or exact session
+  name and, between Claude Code sessions, each Claude session name. Do not
+  require a native address from a session that has no reachable one. After
+  launch, maintain this session's listener when Relay is selected. The initial user-facing
   handoff report is a commentary update when the current client must keep
   its turn active for that listener.
 - Coordination is two-way in either mode: the spawned session reports when it
