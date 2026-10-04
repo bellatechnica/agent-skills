@@ -18,10 +18,13 @@ The `agent-relay-message` skill itself never substitutes direct messaging for a 
 
 Each participant registers its assigned slug, reads pending messages once, then maintains exactly one listener using its client's rule in `agent-relay-message`. The sender also maintains a listener so replies and blockers have a route back. Use `send_message` for a new thread and `reply_to_message` for a response. A successful send is durable acceptance, not recipient processing; acknowledge only after processing as `agent-relay-message` directs.
 
-Inspect `recipient_waiting_at_send` on **every** successful send or reply:
+Inspect both `recipient_waiting_at_send` and
+`recipient_wake_watching_at_send` on **every** successful send or reply. The
+second field reports a recipient using Relay's content-free wake watcher
+instead of an MCP wait:
 
-- If true, Relay alone notified an active wait. Send no extra notice.
-- If false, the payload is still in Relay. Send one content-free notice through the `agent-relay-message` wake helper. For a reachable Codex thread, give it the Codex address and this skill's `scripts/send_native_or_tmux.py`; it tries `codex queue` first and falls back to guarded tmux only when no queue attempt started. A Claude Code sender may use `SendMessage` for a reachable Claude Code recipient. If that tool is unavailable before an attempt, or the recipient has no usable native address, use the guarded tmux wake if its pane is reachable. An uncertain native result forbids a second wake. Without a reachable route, report that active wake-up is unverified. The notice contains only the Relay message ID and inbox/listener instruction; the payload stays in Relay.
+- If either is true, Relay observed a listener. Send no extra notice.
+- If both are false, the payload is still in Relay. Send one content-free notice through the `agent-relay-message` wake helper. For a reachable Codex thread, give it the Codex address and this skill's `scripts/send_native_or_tmux.py`; it tries `codex queue` first and falls back to guarded tmux only when no queue attempt started. A Claude Code sender may use `SendMessage` for a reachable Claude Code recipient. If that tool is unavailable before an attempt, or the recipient has no usable native address, use the guarded tmux wake if its pane is reachable. An uncertain native result forbids a second wake. Without a reachable route, report that active wake-up is unverified. The notice contains only the Relay message ID and inbox/listener instruction; the payload stays in Relay.
 
 An ambiguous send has no authoritative waiting result: do not retry it or send a wake. A listener result with no payload calls for an inbox read, not an assumption that nothing is pending. Keep the client-specific listener active or recover it according to `agent-relay-message` while the sessions still need each other.
 
