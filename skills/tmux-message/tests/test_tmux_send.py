@@ -554,8 +554,12 @@ class ClassifyCaptureTests(unittest.TestCase):
         self.assertEqual(tmux_send.classify_capture(subagent, WIDTH), "UNKNOWN")
 
     def test_claude_unindented_text_joined_onto_lower_border_is_unknown(self) -> None:
-        capture = "\n".join([BORDER, "❯\u00a0", f"{BORDER}$ ls"]) + "\n"
-        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
+        for joined in ("$ ls", "──  note"):
+            with self.subTest(joined=joined):
+                capture = "\n".join([BORDER, "❯\u00a0", f"{BORDER}{joined}"]) + "\n"
+                self.assertEqual(
+                    tmux_send.classify_capture(capture, WIDTH), "UNKNOWN"
+                )
 
     def test_claude_paste_and_clear_are_observable_without_a_cursor(self) -> None:
         def capture(screen: str) -> object:

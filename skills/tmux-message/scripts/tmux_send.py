@@ -346,12 +346,17 @@ def _claude_region(
     if bottom is None:
         return None
 
-    # Claude Code draws only status and panel rows indented at least two columns
-    # below its
-    # composer (observed 2026-10-07 on 2.1.280 and 2.1.292), including a status
-    # row that capture-pane -J joined onto the lower border. Any other row means
-    # the bordered box is history, such as a transcript in another client.
-    joined_tail = _visible(lines[bottom]).lstrip("─━").rstrip()
+    # Claude Code draws only status and panel rows indented at least two
+    # columns below its composer (observed 2026-10-07 on 2.1.280 and 2.1.292),
+    # including a status row that capture-pane -J joined onto the lower border.
+    # Any other row means the bordered box is history, such as a transcript in
+    # another client. A joined row starts at the pane width, so border glyphs
+    # of its own are not mistaken for the border.
+    bottom_visible = _visible(lines[bottom])
+    border_end = len(bottom_visible) - len(bottom_visible.lstrip("─━"))
+    if pane_width is not None and pane_width > 0:
+        border_end = min(border_end, pane_width)
+    joined_tail = bottom_visible[border_end:].rstrip()
     trailing_nonblank = [
         _visible(line).rstrip() for line in lines[bottom + 1 :] if _visible(line).strip()
     ]
