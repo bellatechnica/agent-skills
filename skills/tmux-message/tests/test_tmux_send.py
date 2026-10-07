@@ -61,15 +61,32 @@ def codex_capture(first: str = "", *continuations: str) -> str:
     return "\n".join(rows) + "\n"
 
 
-def codex_two_row_footer_capture(first: str = "", *continuations: str) -> str:
-    """Codex 0.160: a shortcuts row with warnings under the summary row."""
+def codex_two_row_footer_capture(
+    first: str = "",
+    *continuations: str,
+    hint: bool = True,
+    queue: bool = False,
+) -> str:
+    """Codex 0.160.1: a warnings row under the summary row.
+
+    The row also carries `? for shortcuts` while the composer is empty and only
+    the right-aligned warnings notice while it holds a draft.
+    """
+    lower = (
+        "  ? for shortcuts" + " " * 10 + "⚠ 2 warnings · f2 to view"
+        if hint
+        else " " * 15 + "⚠ 1 warning · f2 to view"
+    )
+    if queue:
+        # A draft during a running turn: no context hint on 0.160.1.
+        lower = "  tab to queue message"
     rows = [f"› {first}"]
     rows.extend(f"  {row}" for row in continuations)
     rows.extend(
         [
             "",
             "  GPT-6.1-Sol medium · /tmp",
-            "  ? for shortcuts" + " " * 10 + "⚠ 2 warnings · f2 to view",
+            lower,
         ]
     )
     return "\n".join(rows) + "\n"
@@ -308,6 +325,8 @@ class ClassifyCaptureTests(unittest.TestCase):
         for capture in (
             codex_two_row_footer_capture("draft"),
             codex_two_row_footer_capture("first", "second"),
+            codex_two_row_footer_capture("draft", hint=False),
+            codex_two_row_footer_capture("draft", queue=True),
         ):
             with self.subTest(capture=capture):
                 self.assertEqual(
@@ -322,6 +341,7 @@ class ClassifyCaptureTests(unittest.TestCase):
             capture.replace(summary, "  note\n" + summary),
             capture + "  later output\n",
             capture.replace("  ? for shortcuts", "  tab to queue message"),
+            codex_two_row_footer_capture(hint=False).replace(summary, ""),
         ):
             with self.subTest(capture=malformed):
                 self.assertEqual(

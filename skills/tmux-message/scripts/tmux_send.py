@@ -42,6 +42,9 @@ CODEX_FOOTER_RE = re.compile(r"^  \S.* · \S")
 # Codex 0.160 adds a second footer row under the model-and-directory summary:
 # the shortcuts hint, with the warnings notice right-aligned.
 CODEX_HINT_ROW_RE = re.compile(r"^  \? for shortcuts(?: .*)?$")
+# While a draft is present the same row holds only the right-aligned warnings
+# notice.
+CODEX_WARNING_ROW_RE = re.compile(r"^ {3,}⚠ \d+ warnings? · f2 to view$")
 # The footer Codex draws instead of the model summary while a turn is running
 # and the composer holds a draft; the context hint is right-aligned.
 CODEX_QUEUE_FOOTER_RE = re.compile(
@@ -507,7 +510,9 @@ def _agy_composer(lines: list[str], pane_width: int | None) -> Composer | None:
 
 def _is_codex_footer(raw_line: str, pane_width: int | None) -> bool:
     visible = _visible(raw_line)
-    if CODEX_HINT_ROW_RE.match(visible.rstrip()):
+    if CODEX_HINT_ROW_RE.match(visible.rstrip()) or CODEX_WARNING_ROW_RE.match(
+        visible.rstrip()
+    ):
         # Only the lower row of the two-row footer, never a footer by itself.
         return False
     if CODEX_FOOTER_RE.match(visible.rstrip()):
@@ -540,7 +545,11 @@ def _codex_composer(
         return None
     if (
         footer > 0
-        and CODEX_HINT_ROW_RE.match(_visible(lines[footer]).rstrip())
+        and (
+            CODEX_HINT_ROW_RE.match(_visible(lines[footer]).rstrip())
+            or CODEX_WARNING_ROW_RE.match(_visible(lines[footer]).rstrip())
+            or CODEX_QUEUE_FOOTER_RE.match(_visible(lines[footer]).rstrip())
+        )
         and CODEX_FOOTER_RE.match(_visible(lines[footer - 1]).rstrip())
     ):
         footer -= 1

@@ -357,12 +357,13 @@ shapes were live-checked on 2026-09-14, and the Cursor CLI 2026.10.01 and
   or the exact `tab to queue message` row (with an optional right-aligned
   `N% context left`) that replaces the summary when a draft is present during a
   running turn; a short dim row or later nonblank output fails closed. Codex
-  0.160 adds a `? for shortcuts` row directly under the summary row (warnings
-  notice right-aligned); the pair is accepted with the blank spacer above the
-  summary row, and the shortcuts row alone is not a footer. Checked 2026-10-07
-  on Codex 0.156.1, including a paste and submit into a pane mid-turn. The
-  0.160 two-row shape is taken from a description of its rows and has not been
-  checked against a live 0.160 pane.
+  0.160 adds a second footer row under the summary row: `? for shortcuts` with
+  the warnings notice right-aligned when the composer is empty, only the
+  right-aligned warnings notice while it holds a draft, and `tab to queue
+  message` while a draft is present during a running turn. Each such pair is
+  accepted with the blank spacer above the summary row, and none of the lower
+  rows is a footer by itself. Checked 2026-10-07 on Codex 0.156.1 and 0.160.1,
+  including a paste and submit into an idle pane and into a pane mid-turn.
 - Antigravity CLI requires full-width top and bottom borders, one column-zero
   `>` prompt, two-column continuation indentation, and the model-and-effort
   footer immediately below the lower border. Its `!` shell mode does not match
