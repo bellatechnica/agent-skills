@@ -61,6 +61,20 @@ def codex_capture(first: str = "", *continuations: str) -> str:
     return "\n".join(rows) + "\n"
 
 
+def codex_two_row_footer_capture(first: str = "", *continuations: str) -> str:
+    """Codex 0.160: a shortcuts row with warnings under the summary row."""
+    rows = [f"› {first}"]
+    rows.extend(f"  {row}" for row in continuations)
+    rows.extend(
+        [
+            "",
+            "  GPT-6.1-Sol medium · /tmp",
+            "  ? for shortcuts" + " " * 10 + "⚠ 2 warnings · f2 to view",
+        ]
+    )
+    return "\n".join(rows) + "\n"
+
+
 def codex_busy_capture(first: str = "", *continuations: str) -> str:
     """A draft in the composer while a turn runs: the footer offers queueing."""
     rows = [
@@ -282,6 +296,36 @@ class ClassifyCaptureTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     tmux_send.classify_capture(capture, WIDTH), "UNKNOWN"
+                )
+
+    def test_codex_two_row_footer_is_clear_when_empty_and_occupied_with_a_draft(self) -> None:
+        self.assertEqual(
+            tmux_send.classify_capture(codex_two_row_footer_capture(), WIDTH),
+            "CLEAR",
+        )
+        placeholder = codex_two_row_footer_capture("\x1b[2mAsk Codex to do anything\x1b[0m")
+        self.assertEqual(tmux_send.classify_capture(placeholder, WIDTH), "CLEAR")
+        for capture in (
+            codex_two_row_footer_capture("draft"),
+            codex_two_row_footer_capture("first", "second"),
+        ):
+            with self.subTest(capture=capture):
+                self.assertEqual(
+                    tmux_send.classify_capture(capture, WIDTH), "OCCUPIED"
+                )
+
+    def test_codex_two_row_footer_needs_both_rows_in_place(self) -> None:
+        capture = codex_two_row_footer_capture()
+        summary = "  GPT-6.1-Sol medium · /tmp\n"
+        for malformed in (
+            capture.replace(summary, ""),
+            capture.replace(summary, "  note\n" + summary),
+            capture + "  later output\n",
+            capture.replace("  ? for shortcuts", "  tab to queue message"),
+        ):
+            with self.subTest(capture=malformed):
+                self.assertEqual(
+                    tmux_send.classify_capture(malformed, WIDTH), "UNKNOWN"
                 )
 
     def test_codex_full_width_dim_editing_footer_recognizes_draft(self) -> None:

@@ -39,6 +39,9 @@ OSC_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)")
 ESCAPE_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]")
 SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
 CODEX_FOOTER_RE = re.compile(r"^  \S.* · \S")
+# Codex 0.160 adds a second footer row under the model-and-directory summary:
+# the shortcuts hint, with the warnings notice right-aligned.
+CODEX_HINT_ROW_RE = re.compile(r"^  \? for shortcuts(?: .*)?$")
 # The footer Codex draws instead of the model summary while a turn is running
 # and the composer holds a draft; the context hint is right-aligned.
 CODEX_QUEUE_FOOTER_RE = re.compile(
@@ -504,6 +507,9 @@ def _agy_composer(lines: list[str], pane_width: int | None) -> Composer | None:
 
 def _is_codex_footer(raw_line: str, pane_width: int | None) -> bool:
     visible = _visible(raw_line)
+    if CODEX_HINT_ROW_RE.match(visible.rstrip()):
+        # Only the lower row of the two-row footer, never a footer by itself.
+        return False
     if CODEX_FOOTER_RE.match(visible.rstrip()):
         return True
     if CODEX_QUEUE_FOOTER_RE.match(visible.rstrip()):
@@ -530,7 +536,15 @@ def _codex_composer(
         if _visible(lines[index]).strip():
             footer = index
             break
-    if footer is None or not _is_codex_footer(lines[footer], pane_width):
+    if footer is None:
+        return None
+    if (
+        footer > 0
+        and CODEX_HINT_ROW_RE.match(_visible(lines[footer]).rstrip())
+        and CODEX_FOOTER_RE.match(_visible(lines[footer - 1]).rstrip())
+    ):
+        footer -= 1
+    elif not _is_codex_footer(lines[footer], pane_width):
         return None
 
     separator = footer - 1
