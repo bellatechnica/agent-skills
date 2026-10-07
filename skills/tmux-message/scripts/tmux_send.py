@@ -379,15 +379,29 @@ def _claude_composer(
     lines: list[str],
     pane_width: int | None,
     cursor_y: int | None = None,
+    cursor_x: int | None = None,
+    cursor_hidden: bool = False,
 ) -> Composer | None:
     bounds = _claude_region(lines, pane_width)
     if bounds is None:
         return None
+    parked = False
     if cursor_y is not None:
         screen_top = _screen_row(lines, bounds.top, pane_width)
         screen_bottom = _screen_row(lines, bounds.bottom, pane_width)
         if not (screen_top < cursor_y < screen_bottom):
-            return None
+            # A sandboxed Claude Code hides its hardware cursor and parks it in
+            # the pane's last column at or below the composer's lower border.
+            # Such a cursor says nothing about the composer, so this shape is
+            # accepted only when the composer itself is positively clear below.
+            parked = (
+                cursor_hidden
+                and pane_width is not None
+                and cursor_x == pane_width - 1
+                and cursor_y >= screen_bottom
+            )
+            if not parked:
+                return None
     if bounds.trailing_panel:
         if cursor_y is None:
             return None
@@ -425,6 +439,8 @@ def _claude_composer(
         has_non_dim = has_non_dim or continuation[2]
     text = "\n".join(text_lines)
     if CLAUDE_AGENT_MESSAGE_RE.match(text):
+        return None
+    if parked and has_non_dim:
         return None
     return Composer("claude", text, has_dim, has_non_dim)
 
@@ -775,9 +791,10 @@ def _composer(
     pane_width: int | None,
     cursor_x: int | None = None,
     cursor_y: int | None = None,
+    cursor_hidden: bool = False,
 ) -> Composer | None:
     return (
-        _claude_composer(lines, pane_width, cursor_y)
+        _claude_composer(lines, pane_width, cursor_y, cursor_x, cursor_hidden)
         or _agy_composer(lines, pane_width)
         or _codex_composer(lines, pane_width)
         or _opencode_composer(lines, cursor_x, cursor_y)
@@ -802,6 +819,7 @@ def classify_capture(
     pane_width: int | None = None,
     cursor_x: int | None = None,
     cursor_y: int | None = None,
+    cursor_hidden: bool = False,
 ) -> str:
     """Classify an ANSI-preserving capture without exposing its contents."""
     lines = _capture_lines(raw, pane_width)
@@ -813,7 +831,7 @@ def classify_capture(
         return DIALOG
     if _cursor_dialog(lines):
         return DIALOG
-    composer = _composer(lines, pane_width, cursor_x, cursor_y)
+    composer = _composer(lines, pane_width, cursor_x, cursor_y, cursor_hidden)
     if composer is None:
         return UNKNOWN
     if not composer.text.strip():
@@ -929,6 +947,7 @@ def capture_target(pane: PaneIdentity) -> CaptureResult:
     lines = _capture_lines(capture.stdout, pane.pane_width)
     cursor_x = None
     cursor_y = None
+    cursor_hidden = False
     claude_region = _claude_region(lines, pane.pane_width)
     if _opencode_region(lines) is not None or claude_region is not None:
         cursor = _tmux(
@@ -936,7 +955,7 @@ def capture_target(pane: PaneIdentity) -> CaptureResult:
             "-p",
             "-t",
             pane.pane_id,
-            "#{cursor_x}\t#{cursor_y}",
+            "#{cursor_x}\t#{cursor_y}\t#{cursor_flag}",
         )
         if cursor.returncode != 0:
             return CaptureResult(
@@ -946,20 +965,23 @@ def capture_target(pane: PaneIdentity) -> CaptureResult:
                 None,
             )
         fields = cursor.stdout.strip().split("\t")
-        if len(fields) != 2:
+        if len(fields) != 3 or fields[2] not in ("0", "1"):
             return CaptureResult(UNKNOWN, "layout", "invalid cursor position", None)
         try:
-            cursor_x, cursor_y = (int(field) for field in fields)
+            cursor_x, cursor_y = (int(field) for field in fields[:2])
         except ValueError:
             return CaptureResult(UNKNOWN, "layout", "invalid cursor position", None)
-    state = classify_capture(capture.stdout, pane.pane_width, cursor_x, cursor_y)
+        cursor_hidden = fields[2] == "0"
+    state = classify_capture(
+        capture.stdout, pane.pane_width, cursor_x, cursor_y, cursor_hidden
+    )
     if state == UNKNOWN:
         return CaptureResult(UNKNOWN, "layout", "pane shape is not recognized", None)
     return CaptureResult(
         state,
         "",
         "",
-        _composer(lines, pane.pane_width, cursor_x, cursor_y),
+        _composer(lines, pane.pane_width, cursor_x, cursor_y, cursor_hidden),
     )
 
 
