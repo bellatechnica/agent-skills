@@ -537,8 +537,27 @@ class ClassifyCaptureTests(unittest.TestCase):
             with self.subTest(capture=capture):
                 self.assertEqual(
                     tmux_send.classify_capture(capture, WIDTH, WIDTH - 1, 3, True),
-                    "UNKNOWN",
+                    "OCCUPIED",
                 )
+
+    def test_claude_hidden_cursor_send_can_observe_paste_and_clear(self) -> None:
+        # The sender's own pasted text must stay visible as an occupied
+        # composer, or the paste is never observed and Enter is never sent.
+        def capture(screen: str) -> object:
+            responses = (
+                mock.Mock(returncode=0, stdout=screen, stderr=""),
+                mock.Mock(returncode=0, stdout=f"{WIDTH - 1}\t3\t0\n", stderr=""),
+            )
+            with mock.patch.object(tmux_send, "_tmux", side_effect=responses):
+                return tmux_send.capture_target(pane())
+
+        before = capture(claude_capture())
+        pasted = capture(claude_capture("message"))
+        after = capture(claude_capture())
+        self.assertEqual(before.state, "CLEAR")
+        self.assertEqual(pasted.state, "OCCUPIED")
+        self.assertTrue(tmux_send._paste_processed(pasted, before.composer))
+        self.assertTrue(tmux_send._submit_cleared(after, pasted))
 
     def test_claude_hidden_cursor_must_be_parked_in_the_last_column_below(self) -> None:
         capture = claude_capture()

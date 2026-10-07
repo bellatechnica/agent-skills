@@ -340,8 +340,9 @@ shapes were live-checked on 2026-09-14, and the Cursor CLI 2026.10.01 and
   The one exception is the sandboxed client, which hides its cursor and parks
   it in the pane's last column at or below the composer's lower border (tmux
   `cursor_flag` 0): that cursor says nothing about the composer, so it is
-  accepted only when the composer is empty or entirely dim. A draft, or a hidden
-  cursor anywhere else, still fails closed. Checked 2026-10-07 on Claude Code
+  accepted only through the composer's own text: empty or entirely dim is
+  `CLEAR`, typed text is `OCCUPIED`, so a draft is refused and the sender's own
+  paste stays observable. A hidden cursor anywhere else still fails closed. Checked 2026-10-07 on Claude Code
   2.1.292 re-rendered with a hidden bottom-right cursor, not on a sandboxed
   client itself.
   When one or more background subagents add rows beginning with their `●`/`◯`
@@ -360,8 +361,8 @@ shapes were live-checked on 2026-09-14, and the Cursor CLI 2026.10.01 and
   notice right-aligned); the pair is accepted with the blank spacer above the
   summary row, and the shortcuts row alone is not a footer. Checked 2026-10-07
   on Codex 0.156.1, including a paste and submit into a pane mid-turn. The
-  0.160 two-row shape comes from operator reports and has not been checked
-  against a live 0.160 pane.
+  0.160 two-row shape is taken from a description of its rows and has not been
+  checked against a live 0.160 pane.
 - Antigravity CLI requires full-width top and bottom borders, one column-zero
   `>` prompt, two-column continuation indentation, and the model-and-effort
   footer immediately below the lower border. Its `!` shell mode does not match

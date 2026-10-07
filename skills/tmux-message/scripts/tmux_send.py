@@ -401,7 +401,9 @@ def _claude_composer(
             # A sandboxed Claude Code hides its hardware cursor and parks it in
             # the pane's last column at or below the composer's lower border.
             # Such a cursor says nothing about the composer, so this shape is
-            # accepted only when the composer itself is positively clear below.
+            # accepted only through the composer's own text: an empty or dim
+            # composer is CLEAR, any typed text is OCCUPIED, so a draft is
+            # refused while the sender's own pasted message stays observable.
             parked = (
                 cursor_hidden
                 and pane_width is not None
@@ -447,8 +449,6 @@ def _claude_composer(
         has_non_dim = has_non_dim or continuation[2]
     text = "\n".join(text_lines)
     if CLAUDE_AGENT_MESSAGE_RE.match(text):
-        return None
-    if parked and has_non_dim:
         return None
     return Composer("claude", text, has_dim, has_non_dim)
 
