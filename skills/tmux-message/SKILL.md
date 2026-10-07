@@ -152,8 +152,8 @@ issues its paste, the message never returns to the retry path. Pin the
 `%pane_id` printed in the refused invocation's stderr diagnostic (`pane %N`) and
 inspect that pane immediately before mutation. Preserve ANSI attributes during
 inspection so dim suggestions remain distinguishable from plain drafts; the
-terminal cursor is not evidence for Claude Code or Cursor CLI, which hide and
-park it, and elsewhere is only a second signal when styling is ambiguous. A
+terminal cursor is not evidence for Claude Code or Cursor CLI, which can hide
+it, and elsewhere is only a second signal when styling is ambiguous. A
 passive notice above an independently clear composer does not need to be
 dismissed before delivery. Finish and read the inspection before starting any mutation;
 do not pipe a capture into the paste operation. Deliver only the exact retained
@@ -336,15 +336,19 @@ shapes were live-checked on 2026-09-14, and the Cursor CLI 2026.10.01 and
   `❯` prompt inside them. Clear-versus-occupied classification comes from that
   bordered composer itself; it does not depend on the wording or presence of a
   status row below the bottom border, but every nonblank row below that border,
-  including text joined onto it, must be indented two columns, as Claude Code
-  2.1.280 and 2.1.292 draw their status and panel rows (observed 2026-10-07);
-  any other row means the bordered box is history rather than the live
-  composer. The terminal cursor is not consulted: the sandboxed client hides it
+  including text joined onto it, must be indented at least two columns, as
+  Claude Code 2.1.280 and 2.1.292 draw their status and panel rows (observed
+  2026-10-07); any other row means the bordered box is history rather than the
+  live composer. The terminal cursor is not consulted: the sandboxed client hides it
   and parks it in the pane's last column, not necessarily on a composer row.
-  If input focus is elsewhere, such as a background-subagent panel or an
-  overlay that leaves the box drawn, the paste is delivered to that control,
-  never appears in the composer, and the sender reports
-  `DELIVERY_UNVERIFIED paste-not-observed` without sending Enter.
+  The sandboxed shape was reported from a live pane (cursor hidden at 79,18 on
+  80x24) and replayed from a host capture; no raw capture of a sandboxed pane
+  backs it. Not
+  observed: what happens when input focus is elsewhere, such as a
+  background-subagent panel or an overlay that leaves the box drawn. The
+  expected outcome is that the paste goes to that control and the composer
+  stays empty, so the sender reports `DELIVERY_UNVERIFIED paste-not-observed`
+  without sending Enter; pasted characters may still act on that control.
   When one or more background subagents add rows beginning with their `●`/`◯`
   selection markers below the composer, exactly one such row must carry the
   selected marker, and that row must be `main`. A composer beginning with the

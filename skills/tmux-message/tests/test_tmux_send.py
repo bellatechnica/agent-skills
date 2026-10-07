@@ -539,6 +539,20 @@ class ClassifyCaptureTests(unittest.TestCase):
                     tmux_send.classify_capture(capture, WIDTH), "UNKNOWN"
                 )
 
+    def test_claude_panel_row_joined_onto_lower_border_counts_as_panel(self) -> None:
+        rows = [
+            BORDER,
+            "❯\u00a0",
+            f"{BORDER}  ● main",
+            "  ◯ general-purpose-0  Waiting",
+        ]
+        capture = "\n".join(rows) + "\n"
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "CLEAR")
+        subagent = capture.replace("● main", "◯ main").replace(
+            "◯ general-purpose-0", "● general-purpose-0"
+        )
+        self.assertEqual(tmux_send.classify_capture(subagent, WIDTH), "UNKNOWN")
+
     def test_claude_unindented_text_joined_onto_lower_border_is_unknown(self) -> None:
         capture = "\n".join([BORDER, "❯\u00a0", f"{BORDER}$ ls"]) + "\n"
         self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")

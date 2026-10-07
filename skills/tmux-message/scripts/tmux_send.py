@@ -346,7 +346,8 @@ def _claude_region(
     if bottom is None:
         return None
 
-    # Claude Code draws only two-column-indented status and panel rows below its
+    # Claude Code draws only status and panel rows indented at least two columns
+    # below its
     # composer (observed 2026-10-07 on 2.1.280 and 2.1.292), including a status
     # row that capture-pane -J joined onto the lower border. Any other row means
     # the bordered box is history, such as a transcript in another client.
@@ -354,10 +355,8 @@ def _claude_region(
     trailing_nonblank = [
         _visible(line).rstrip() for line in lines[bottom + 1 :] if _visible(line).strip()
     ]
-    if any(
-        not row.startswith("  ")
-        for row in ([joined_tail] if joined_tail else []) + trailing_nonblank
-    ):
+    trailing_nonblank = ([joined_tail] if joined_tail else []) + trailing_nonblank
+    if any(not row.startswith("  ") for row in trailing_nonblank):
         return None
     trailing_panel = tuple(
         row for row in trailing_nonblank if CLAUDE_PANEL_ROW_RE.match(row)
