@@ -39,6 +39,11 @@ OSC_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)")
 ESCAPE_RE = re.compile(r"\x1b\].*?(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]")
 SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
 CODEX_FOOTER_RE = re.compile(r"^  \S.* · \S")
+# The footer Codex draws instead of the model summary while a turn is running
+# and the composer holds a draft; the context hint is right-aligned.
+CODEX_QUEUE_FOOTER_RE = re.compile(
+    r"^  tab to queue message(?: {2,}\d+% context left)?$"
+)
 CLAUDE_PANEL_ROW_RE = re.compile(r"^\s*[●◯](?:\s|$)")
 CLAUDE_SELECTED_PANEL_RE = re.compile(r"^\s*●(?:\s|$)")
 CLAUDE_MAIN_SELECTED_RE = re.compile(r"^\s*●\s+main(?:\s|$)")
@@ -500,6 +505,8 @@ def _agy_composer(lines: list[str], pane_width: int | None) -> Composer | None:
 def _is_codex_footer(raw_line: str, pane_width: int | None) -> bool:
     visible = _visible(raw_line)
     if CODEX_FOOTER_RE.match(visible.rstrip()):
+        return True
+    if CODEX_QUEUE_FOOTER_RE.match(visible.rstrip()):
         return True
     if pane_width is None or not visible.startswith("  "):
         return False

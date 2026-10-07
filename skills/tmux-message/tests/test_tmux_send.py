@@ -61,6 +61,19 @@ def codex_capture(first: str = "", *continuations: str) -> str:
     return "\n".join(rows) + "\n"
 
 
+def codex_busy_capture(first: str = "", *continuations: str) -> str:
+    """A draft in the composer while a turn runs: the footer offers queueing."""
+    rows = [
+        "• Working (23s • esc to interrupt) · /ps to view",
+        "",
+        f"› {first}",
+    ]
+    rows.extend(f"  {row}" for row in continuations)
+    hint = "  \x1b[1mtab\x1b[0m to queue message"
+    rows.extend(["", hint + " " * 5 + "94% context left"])
+    return "\n".join(rows) + "\n"
+
+
 def codex_editing_footer_capture(first: str = "draft") -> str:
     footer_width = WIDTH - 2
     footer = "  status".ljust(footer_width, "·")
@@ -234,6 +247,41 @@ class ClassifyCaptureTests(unittest.TestCase):
             with self.subTest(client=capture[0]):
                 self.assertEqual(
                     tmux_send.classify_capture(capture, WIDTH), "OCCUPIED"
+                )
+
+    def test_codex_draft_during_a_turn_with_queue_footer_is_occupied(self) -> None:
+        for capture in (
+            codex_busy_capture("queued draft"),
+            codex_busy_capture("first", "second"),
+        ):
+            with self.subTest(capture=capture):
+                self.assertEqual(
+                    tmux_send.classify_capture(capture, WIDTH), "OCCUPIED"
+                )
+
+    def test_codex_queue_footer_proves_the_paste_was_processed(self) -> None:
+        busy = codex_busy_capture("message")
+        composer = tmux_send._composer(busy.splitlines(), WIDTH)
+        self.assertEqual(composer.text, "message")
+        self.assertTrue(
+            tmux_send._paste_processed(
+                result(tmux_send.OCCUPIED, composer), cleared().composer
+            )
+        )
+
+    def test_codex_queue_footer_wording_must_match_exactly(self) -> None:
+        for footer in (
+            "  tab to queue message and more",
+            "tab to queue message",
+            "  press tab to queue message",
+        ):
+            with self.subTest(footer=footer):
+                capture = codex_busy_capture("draft").replace(
+                    "  \x1b[1mtab\x1b[0m to queue message     94% context left",
+                    footer,
+                )
+                self.assertEqual(
+                    tmux_send.classify_capture(capture, WIDTH), "UNKNOWN"
                 )
 
     def test_codex_full_width_dim_editing_footer_recognizes_draft(self) -> None:
