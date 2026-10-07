@@ -337,6 +337,13 @@ shapes were live-checked on 2026-09-14, and the Cursor CLI 2026.10.01 and
   status row below the bottom border. Live delivery also requires the terminal
   cursor inside that composer; its row comparison restores screen rows consumed
   by soft wrapping that `capture-pane -J` joined above or inside the composer.
+  The one exception is the sandboxed client, which hides its cursor and parks
+  it in the pane's last column at or below the composer's lower border (tmux
+  `cursor_flag` 0): that cursor says nothing about the composer, so it is
+  accepted only when the composer is empty or entirely dim. A draft, or a hidden
+  cursor anywhere else, still fails closed. Checked 2026-10-07 on Claude Code
+  2.1.292 re-rendered with a hidden bottom-right cursor, not on a sandboxed
+  client itself.
   When one or more background subagents add rows beginning with their `●`/`◯`
   selection markers below the composer, exactly one such row must carry the
   selected marker, and that row must be `main`. A composer beginning with the
@@ -344,9 +351,17 @@ shapes were live-checked on 2026-09-14, and the Cursor CLI 2026.10.01 and
   Dialog footers and other interfaces without the bordered prompt still fail
   closed.
 - Codex requires one column-zero `›` prompt followed by its structural spacer
-  and bottommost footer. The footer is either the model/directory summary or
-  the full-width, entirely dim editing status line used while a draft is
-  present; a short dim row or later nonblank output fails closed.
+  and bottommost footer. The footer is the model/directory summary, the
+  full-width, entirely dim editing status line used while a draft is present,
+  or the exact `tab to queue message` row (with an optional right-aligned
+  `N% context left`) that replaces the summary when a draft is present during a
+  running turn; a short dim row or later nonblank output fails closed. Codex
+  0.160 adds a `? for shortcuts` row directly under the summary row (warnings
+  notice right-aligned); the pair is accepted with the blank spacer above the
+  summary row, and the shortcuts row alone is not a footer. Checked 2026-10-07
+  on Codex 0.156.1, including a paste and submit into a pane mid-turn. The
+  0.160 two-row shape comes from operator reports and has not been checked
+  against a live 0.160 pane.
 - Antigravity CLI requires full-width top and bottom borders, one column-zero
   `>` prompt, two-column continuation indentation, and the model-and-effort
   footer immediately below the lower border. Its `!` shell mode does not match
