@@ -151,10 +151,11 @@ confirm that no guarded invocation for it is still running. Once the fallback
 issues its paste, the message never returns to the retry path. Pin the
 `%pane_id` printed in the refused invocation's stderr diagnostic (`pane %N`) and
 inspect that pane immediately before mutation. Preserve ANSI attributes during
-inspection so dim suggestions remain distinguishable from plain drafts; query
-the terminal cursor as a second signal when styling is ambiguous. A passive
-notice above an independently clear composer does not need to be dismissed
-before delivery. Finish and read the inspection before starting any mutation;
+inspection so dim suggestions remain distinguishable from plain drafts; the
+terminal cursor is not evidence for Claude Code or Cursor CLI, which hide and
+park it, and elsewhere is only a second signal when styling is ambiguous. A
+passive notice above an independently clear composer does not need to be
+dismissed before delivery. Finish and read the inspection before starting any mutation;
 do not pipe a capture into the paste operation. Deliver only the exact retained
 source that invocation already accepted, so the empty-message and control-
 character checks have run:
@@ -334,13 +335,16 @@ shapes were live-checked on 2026-09-14, and the Cursor CLI 2026.10.01 and
 - Claude Code requires full-width top and bottom borders and one column-zero
   `❯` prompt inside them. Clear-versus-occupied classification comes from that
   bordered composer itself; it does not depend on the wording or presence of a
-  status row below the bottom border, but every nonblank row below that border
-  must be indented two columns, as Claude Code's status and panel rows are; any
-  other row means the bordered box is history rather than the live composer.
-  The terminal cursor is not consulted: the sandboxed client hides it and
-  parks it in the pane's last column, not necessarily on a composer row, and a
-  visible cursor at the prompt was once observed with a draft present. If input focus is elsewhere,
-  the paste does not appear in the composer and the sender sends no Enter.
+  status row below the bottom border, but every nonblank row below that border,
+  including text joined onto it, must be indented two columns, as Claude Code
+  2.1.280 and 2.1.292 draw their status and panel rows (observed 2026-10-07);
+  any other row means the bordered box is history rather than the live
+  composer. The terminal cursor is not consulted: the sandboxed client hides it
+  and parks it in the pane's last column, not necessarily on a composer row.
+  If input focus is elsewhere, such as a background-subagent panel or an
+  overlay that leaves the box drawn, the paste is delivered to that control,
+  never appears in the composer, and the sender reports
+  `DELIVERY_UNVERIFIED paste-not-observed` without sending Enter.
   When one or more background subagents add rows beginning with their `●`/`◯`
   selection markers below the composer, exactly one such row must carry the
   selected marker, and that row must be `main`. A composer beginning with the

@@ -521,13 +521,15 @@ class ClassifyCaptureTests(unittest.TestCase):
         # A sandboxed Claude Code hides its cursor and parks it outside the
         # composer, so the composer's own text decides the state.
         self.assertEqual(tmux_send.classify_capture(claude_capture(), WIDTH), "CLEAR")
-        self.assertEqual(
-            tmux_send.classify_capture(claude_capture("draft"), WIDTH), "OCCUPIED"
-        )
-        self.assertEqual(
-            tmux_send.classify_capture(claude_capture(), WIDTH, WIDTH - 1, 18),
-            "CLEAR",
-        )
+        for capture in (
+            claude_capture("draft"),
+            claude_capture("", "second line"),
+            claude_capture("\x1b[2mTry\x1b[0m typed"),
+        ):
+            with self.subTest(capture=capture):
+                self.assertEqual(
+                    tmux_send.classify_capture(capture, WIDTH), "OCCUPIED"
+                )
 
     def test_claude_unindented_row_below_the_composer_is_unknown(self) -> None:
         for row in ("• Working (1s • esc to interrupt)", "$ ", "› Ask Codex"):
@@ -536,6 +538,10 @@ class ClassifyCaptureTests(unittest.TestCase):
                 self.assertEqual(
                     tmux_send.classify_capture(capture, WIDTH), "UNKNOWN"
                 )
+
+    def test_claude_unindented_text_joined_onto_lower_border_is_unknown(self) -> None:
+        capture = "\n".join([BORDER, "❯\u00a0", f"{BORDER}$ ls"]) + "\n"
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
 
     def test_claude_paste_and_clear_are_observable_without_a_cursor(self) -> None:
         def capture(screen: str) -> object:

@@ -346,9 +346,19 @@ def _claude_region(
     if bottom is None:
         return None
 
+    # Claude Code draws only two-column-indented status and panel rows below its
+    # composer (observed 2026-10-07 on 2.1.280 and 2.1.292), including a status
+    # row that capture-pane -J joined onto the lower border. Any other row means
+    # the bordered box is history, such as a transcript in another client.
+    joined_tail = _visible(lines[bottom]).lstrip("─━").rstrip()
     trailing_nonblank = [
         _visible(line).rstrip() for line in lines[bottom + 1 :] if _visible(line).strip()
     ]
+    if any(
+        not row.startswith("  ")
+        for row in ([joined_tail] if joined_tail else []) + trailing_nonblank
+    ):
+        return None
     trailing_panel = tuple(
         row for row in trailing_nonblank if CLAUDE_PANEL_ROW_RE.match(row)
     )
@@ -368,19 +378,12 @@ def _claude_composer(
     lines: list[str], pane_width: int | None
 ) -> Composer | None:
     # The terminal cursor is not consulted: a sandboxed client hides it and
-    # parks it outside the composer, and a visible one was seen at the prompt
-    # while a draft was present. A paste that lands anywhere but the composer
-    # is never observed there, so the sender then sends no Enter. Liveness comes
-    # from the rows below instead: Claude Code draws only indented status and
-    # panel rows under its composer, so any other row means the bordered box is
-    # history, such as a transcript in another client.
+    # parks it in the pane's last column, not necessarily on a composer row. A
+    # paste that lands anywhere but the composer is never observed there, so the
+    # sender then sends no Enter; the rows below the composer establish that the
+    # bordered box is live (see _claude_region).
     bounds = _claude_region(lines, pane_width)
     if bounds is None:
-        return None
-    if any(
-        _visible(line).strip() and not _visible(line).startswith("  ")
-        for line in lines[bounds.bottom + 1 :]
-    ):
         return None
     if bounds.trailing_panel:
         selected_rows = [
