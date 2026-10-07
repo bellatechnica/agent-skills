@@ -256,28 +256,6 @@ def _has_plain_full_width_border_prefix(
     return border_length >= minimum
 
 
-def _display_width(raw_line: str) -> int:
-    width = 0
-    for char in _visible(raw_line):
-        category = unicodedata.category(char)
-        if unicodedata.combining(char) or category in ("Cc", "Cf"):
-            continue
-        width += 2 if unicodedata.east_asian_width(char) in ("W", "F") else 1
-    return width
-
-
-def _screen_row(
-    lines: list[str], capture_index: int, pane_width: int | None
-) -> int:
-    if pane_width is None or pane_width <= 0:
-        return capture_index
-    extra_rows = sum(
-        (max(_display_width(line), 1) - 1) // pane_width
-        for line in lines[:capture_index]
-    )
-    return capture_index + extra_rows
-
-
 def _raw_offset_after_visible_chars(raw: str, count: int) -> int | None:
     visible_count = 0
     raw_position = 0
@@ -387,37 +365,24 @@ def _claude_region(
 
 
 def _claude_composer(
-    lines: list[str],
-    pane_width: int | None,
-    cursor_y: int | None = None,
-    cursor_x: int | None = None,
-    cursor_hidden: bool = False,
+    lines: list[str], pane_width: int | None
 ) -> Composer | None:
+    # The terminal cursor is not consulted: a sandboxed client hides it and
+    # parks it outside the composer, and a visible one was seen at the prompt
+    # while a draft was present. A paste that lands anywhere but the composer
+    # is never observed there, so the sender then sends no Enter. Liveness comes
+    # from the rows below instead: Claude Code draws only indented status and
+    # panel rows under its composer, so any other row means the bordered box is
+    # history, such as a transcript in another client.
     bounds = _claude_region(lines, pane_width)
     if bounds is None:
         return None
-    parked = False
-    if cursor_y is not None:
-        screen_top = _screen_row(lines, bounds.top, pane_width)
-        screen_bottom = _screen_row(lines, bounds.bottom, pane_width)
-        if not (screen_top < cursor_y < screen_bottom):
-            # A sandboxed Claude Code hides its hardware cursor and parks it in
-            # the pane's last column at or below the composer's lower border.
-            # Such a cursor says nothing about the composer, so this shape is
-            # accepted only through the composer's own text: an empty or dim
-            # composer is CLEAR, any typed text is OCCUPIED, so a draft is
-            # refused while the sender's own pasted message stays observable.
-            parked = (
-                cursor_hidden
-                and pane_width is not None
-                and cursor_x == pane_width - 1
-                and cursor_y >= screen_bottom
-            )
-            if not parked:
-                return None
+    if any(
+        _visible(line).strip() and not _visible(line).startswith("  ")
+        for line in lines[bounds.bottom + 1 :]
+    ):
+        return None
     if bounds.trailing_panel:
-        if cursor_y is None:
-            return None
         selected_rows = [
             row for row in bounds.trailing_panel if CLAUDE_SELECTED_PANEL_RE.match(row)
         ]
@@ -821,10 +786,9 @@ def _composer(
     pane_width: int | None,
     cursor_x: int | None = None,
     cursor_y: int | None = None,
-    cursor_hidden: bool = False,
 ) -> Composer | None:
     return (
-        _claude_composer(lines, pane_width, cursor_y, cursor_x, cursor_hidden)
+        _claude_composer(lines, pane_width)
         or _agy_composer(lines, pane_width)
         or _codex_composer(lines, pane_width)
         or _opencode_composer(lines, cursor_x, cursor_y)
@@ -849,7 +813,6 @@ def classify_capture(
     pane_width: int | None = None,
     cursor_x: int | None = None,
     cursor_y: int | None = None,
-    cursor_hidden: bool = False,
 ) -> str:
     """Classify an ANSI-preserving capture without exposing its contents."""
     lines = _capture_lines(raw, pane_width)
@@ -861,7 +824,7 @@ def classify_capture(
         return DIALOG
     if _cursor_dialog(lines):
         return DIALOG
-    composer = _composer(lines, pane_width, cursor_x, cursor_y, cursor_hidden)
+    composer = _composer(lines, pane_width, cursor_x, cursor_y)
     if composer is None:
         return UNKNOWN
     if not composer.text.strip():
@@ -977,15 +940,13 @@ def capture_target(pane: PaneIdentity) -> CaptureResult:
     lines = _capture_lines(capture.stdout, pane.pane_width)
     cursor_x = None
     cursor_y = None
-    cursor_hidden = False
-    claude_region = _claude_region(lines, pane.pane_width)
-    if _opencode_region(lines) is not None or claude_region is not None:
+    if _opencode_region(lines) is not None:
         cursor = _tmux(
             "display-message",
             "-p",
             "-t",
             pane.pane_id,
-            "#{cursor_x}\t#{cursor_y}\t#{cursor_flag}",
+            "#{cursor_x}\t#{cursor_y}",
         )
         if cursor.returncode != 0:
             return CaptureResult(
@@ -995,23 +956,20 @@ def capture_target(pane: PaneIdentity) -> CaptureResult:
                 None,
             )
         fields = cursor.stdout.strip().split("\t")
-        if len(fields) != 3 or fields[2] not in ("0", "1"):
+        if len(fields) != 2:
             return CaptureResult(UNKNOWN, "layout", "invalid cursor position", None)
         try:
-            cursor_x, cursor_y = (int(field) for field in fields[:2])
+            cursor_x, cursor_y = (int(field) for field in fields)
         except ValueError:
             return CaptureResult(UNKNOWN, "layout", "invalid cursor position", None)
-        cursor_hidden = fields[2] == "0"
-    state = classify_capture(
-        capture.stdout, pane.pane_width, cursor_x, cursor_y, cursor_hidden
-    )
+    state = classify_capture(capture.stdout, pane.pane_width, cursor_x, cursor_y)
     if state == UNKNOWN:
         return CaptureResult(UNKNOWN, "layout", "pane shape is not recognized", None)
     return CaptureResult(
         state,
         "",
         "",
-        _composer(lines, pane.pane_width, cursor_x, cursor_y, cursor_hidden),
+        _composer(lines, pane.pane_width, cursor_x, cursor_y),
     )
 
 

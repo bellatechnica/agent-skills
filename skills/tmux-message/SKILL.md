@@ -334,17 +334,13 @@ shapes were live-checked on 2026-09-14, and the Cursor CLI 2026.10.01 and
 - Claude Code requires full-width top and bottom borders and one column-zero
   `❯` prompt inside them. Clear-versus-occupied classification comes from that
   bordered composer itself; it does not depend on the wording or presence of a
-  status row below the bottom border. Live delivery also requires the terminal
-  cursor inside that composer; its row comparison restores screen rows consumed
-  by soft wrapping that `capture-pane -J` joined above or inside the composer.
-  The one exception is the sandboxed client, which hides its cursor and parks
-  it in the pane's last column at or below the composer's lower border (tmux
-  `cursor_flag` 0): that cursor says nothing about the composer, so it is
-  accepted only through the composer's own text: empty or entirely dim is
-  `CLEAR`, typed text is `OCCUPIED`, so a draft is refused and the sender's own
-  paste stays observable. A hidden cursor anywhere else still fails closed. Checked 2026-10-07 on Claude Code
-  2.1.292 re-rendered with a hidden bottom-right cursor, not on a sandboxed
-  client itself.
+  status row below the bottom border, but every nonblank row below that border
+  must be indented two columns, as Claude Code's status and panel rows are; any
+  other row means the bordered box is history rather than the live composer.
+  The terminal cursor is not consulted: the sandboxed client hides it and
+  parks it in the pane's last column, not necessarily on a composer row, and a
+  visible cursor at the prompt was once observed with a draft present. If input focus is elsewhere,
+  the paste does not appear in the composer and the sender sends no Enter.
   When one or more background subagents add rows beginning with their `●`/`◯`
   selection markers below the composer, exactly one such row must carry the
   selected marker, and that row must be `main`. A composer beginning with the

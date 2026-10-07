@@ -437,22 +437,6 @@ class ClassifyCaptureTests(unittest.TestCase):
             "DIALOG",
         )
 
-    def test_claude_cursor_mapping_restores_joined_rows_above_composer(self) -> None:
-        transcript = "x" * (WIDTH + 18)
-        capture = transcript + "\n" + claude_capture()
-        self.assertEqual(
-            tmux_send.classify_capture(capture, WIDTH, 2, 3),
-            "CLEAR",
-        )
-
-    def test_claude_cursor_mapping_counts_wide_terminal_columns(self) -> None:
-        transcript = "界" * WIDTH
-        capture = transcript + "\n" + claude_capture()
-        self.assertEqual(
-            tmux_send.classify_capture(capture, WIDTH, 2, 3),
-            "CLEAR",
-        )
-
     def test_claude_agent_message_without_panel_is_unknown(self) -> None:
         capture = claude_capture(
             "\x1b[2mMessage @general-purpose…\x1b[0m"
@@ -491,12 +475,9 @@ class ClassifyCaptureTests(unittest.TestCase):
             "OCCUPIED",
         )
 
-    def test_claude_background_agent_panel_requires_composer_cursor(self) -> None:
+    def test_claude_background_agent_panel_needs_no_cursor(self) -> None:
         capture = claude_capture_with_background_agents(agent_count=2)
-        self.assertEqual(
-            tmux_send.classify_capture(capture, WIDTH),
-            "UNKNOWN",
-        )
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "CLEAR")
 
     def test_claude_background_agent_panel_rejects_subagent_view(self) -> None:
         capture = claude_capture_with_background_agents(
@@ -536,39 +517,30 @@ class ClassifyCaptureTests(unittest.TestCase):
             "UNKNOWN",
         )
 
-    def test_claude_hidden_cursor_parked_below_composer_accepts_clear(self) -> None:
-        # A sandboxed Claude Code hides its cursor and parks it in the last
-        # column on the footer row (tmux reported 199,49 flag 0 on 200x50).
-        for first in ("", "\x1b[2mTry something\x1b[0m"):
-            with self.subTest(first=first):
+    def test_claude_composer_is_classified_without_the_cursor(self) -> None:
+        # A sandboxed Claude Code hides its cursor and parks it outside the
+        # composer, so the composer's own text decides the state.
+        self.assertEqual(tmux_send.classify_capture(claude_capture(), WIDTH), "CLEAR")
+        self.assertEqual(
+            tmux_send.classify_capture(claude_capture("draft"), WIDTH), "OCCUPIED"
+        )
+        self.assertEqual(
+            tmux_send.classify_capture(claude_capture(), WIDTH, WIDTH - 1, 18),
+            "CLEAR",
+        )
+
+    def test_claude_unindented_row_below_the_composer_is_unknown(self) -> None:
+        for row in ("• Working (1s • esc to interrupt)", "$ ", "› Ask Codex"):
+            with self.subTest(row=row):
+                capture = claude_capture() + row + "\n"
                 self.assertEqual(
-                    tmux_send.classify_capture(
-                        claude_capture(first), WIDTH, WIDTH - 1, 3, True
-                    ),
-                    "CLEAR",
+                    tmux_send.classify_capture(capture, WIDTH), "UNKNOWN"
                 )
 
-    def test_claude_hidden_cursor_never_accepts_a_draft(self) -> None:
-        for capture in (
-            claude_capture("review this branch"),
-            claude_capture("", "second line"),
-            claude_capture("\x1b[2mTry\x1b[0m typed"),
-        ):
-            with self.subTest(capture=capture):
-                self.assertEqual(
-                    tmux_send.classify_capture(capture, WIDTH, WIDTH - 1, 3, True),
-                    "OCCUPIED",
-                )
-
-    def test_claude_hidden_cursor_send_can_observe_paste_and_clear(self) -> None:
-        # The sender's own pasted text must stay visible as an occupied
-        # composer, or the paste is never observed and Enter is never sent.
+    def test_claude_paste_and_clear_are_observable_without_a_cursor(self) -> None:
         def capture(screen: str) -> object:
-            responses = (
-                mock.Mock(returncode=0, stdout=screen, stderr=""),
-                mock.Mock(returncode=0, stdout=f"{WIDTH - 1}\t3\t0\n", stderr=""),
-            )
-            with mock.patch.object(tmux_send, "_tmux", side_effect=responses):
+            response = mock.Mock(returncode=0, stdout=screen, stderr="")
+            with mock.patch.object(tmux_send, "_tmux", side_effect=(response,)):
                 return tmux_send.capture_target(pane())
 
         before = capture(claude_capture())
@@ -578,46 +550,6 @@ class ClassifyCaptureTests(unittest.TestCase):
         self.assertEqual(pasted.state, "OCCUPIED")
         self.assertTrue(tmux_send._paste_processed(pasted, before.composer))
         self.assertTrue(tmux_send._submit_cleared(after, pasted))
-
-    def test_claude_hidden_cursor_must_be_parked_in_the_last_column_below(self) -> None:
-        capture = claude_capture()
-        for cursor_x, cursor_y, hidden in (
-            (10, 3, True),
-            (WIDTH - 1, 0, True),
-            (WIDTH - 1, 1, True),
-            (WIDTH - 1, 3, False),
-        ):
-            with self.subTest(cursor=(cursor_x, cursor_y, hidden)):
-                state = tmux_send.classify_capture(
-                    capture, WIDTH, cursor_x, cursor_y, hidden
-                )
-                # (WIDTH - 1, 1) is inside the composer rows, so the ordinary
-                # in-composer rule applies and the capture is clear.
-                self.assertEqual(
-                    state, "CLEAR" if cursor_y == 1 else "UNKNOWN"
-                )
-
-    def test_claude_hidden_cursor_keeps_the_background_panel_rules(self) -> None:
-        main = claude_capture_with_background_agents(agent_count=2)
-        subagent = claude_capture_with_background_agents(
-            agent_count=2, viewed_agent=0
-        )
-        self.assertEqual(
-            tmux_send.classify_capture(main, WIDTH, WIDTH - 1, 5, True), "CLEAR"
-        )
-        self.assertEqual(
-            tmux_send.classify_capture(subagent, WIDTH, WIDTH - 1, 5, True),
-            "UNKNOWN",
-        )
-
-    def test_claude_hidden_cursor_still_refuses_dialog_footers(self) -> None:
-        capture = claude_capture().replace(
-            "  ⏵⏵ auto mode on", "  Enter to confirm · Esc to cancel"
-        )
-        self.assertEqual(
-            tmux_send.classify_capture(capture, WIDTH, WIDTH - 1, 3, True),
-            "DIALOG",
-        )
 
     def test_agy_bare_prompt_is_clear(self) -> None:
         self.assertEqual(tmux_send.classify_capture(agy_capture(), WIDTH), "CLEAR")
@@ -1085,7 +1017,7 @@ class CaptureTargetTests(unittest.TestCase):
         capture, cursor_x, cursor_y = opencode_capture()
         responses = (
             self.completed(capture),
-            self.completed(f"{cursor_x}\t{cursor_y}\t1\n"),
+            self.completed(f"{cursor_x}\t{cursor_y}\n"),
         )
         with mock.patch.object(tmux_send, "_tmux", side_effect=responses) as call:
             actual = tmux_send.capture_target(pane())
@@ -1093,23 +1025,18 @@ class CaptureTargetTests(unittest.TestCase):
         self.assertEqual(actual.composer.client, "opencode")
         self.assertEqual(call.call_args_list[1].args[0], "display-message")
 
-    def test_claude_background_agent_panel_queries_cursor(self) -> None:
+    def test_claude_capture_does_not_query_the_cursor(self) -> None:
         capture = claude_capture_with_background_agents(agent_count=3)
-        responses = (
-            self.completed(capture),
-            self.completed("2\t1\t1\n"),
-        )
-        with mock.patch.object(tmux_send, "_tmux", side_effect=responses) as call:
+        with mock.patch.object(
+            tmux_send, "_tmux", side_effect=(self.completed(capture),)
+        ) as call:
             actual = tmux_send.capture_target(pane())
         self.assertEqual(actual.state, "CLEAR")
         self.assertEqual(actual.composer.client, "claude")
-        self.assertEqual(call.call_args_list[1].args[0], "display-message")
+        self.assertEqual(call.call_count, 1)
 
     def test_joined_claude_border_returns_the_normalized_composer(self) -> None:
-        responses = (
-            self.completed(claude_joined_border_capture()),
-            self.completed("2\t1\t1\n"),
-        )
+        responses = (self.completed(claude_joined_border_capture()),)
         with mock.patch.object(tmux_send, "_tmux", side_effect=responses) as call:
             actual = tmux_send.capture_target(pane())
         self.assertEqual(actual.state, "CLEAR")
@@ -1118,30 +1045,7 @@ class CaptureTargetTests(unittest.TestCase):
             call.call_args_list[0].args,
             ("capture-pane", "-p", "-e", "-J", "-t", "%7"),
         )
-        self.assertEqual(call.call_args_list[1].args[0], "display-message")
-
-    def test_hidden_parked_claude_cursor_is_read_from_tmux_cursor_flag(self) -> None:
-        responses = (
-            self.completed(claude_capture()),
-            self.completed(f"{WIDTH - 1}\t3\t0\n"),
-        )
-        with mock.patch.object(tmux_send, "_tmux", side_effect=responses) as call:
-            actual = tmux_send.capture_target(pane())
-        self.assertEqual(actual.state, "CLEAR")
-        self.assertIn("#{cursor_flag}", call.call_args_list[1].args[-1])
-
-    def test_invalid_cursor_visibility_fails_closed(self) -> None:
-        for reply in ("2\t1\n", "2\t1\t2\n", f"{WIDTH - 1}\t3\tx\n"):
-            with self.subTest(reply=reply):
-                responses = (
-                    self.completed(claude_capture()),
-                    self.completed(reply),
-                )
-                with mock.patch.object(tmux_send, "_tmux", side_effect=responses):
-                    actual = tmux_send.capture_target(pane())
-                self.assertEqual(
-                    (actual.state, actual.detail_class), ("UNKNOWN", "layout")
-                )
+        self.assertEqual(call.call_count, 1)
 
     def test_opencode_invalid_cursor_position_fails_closed(self) -> None:
         capture, _cursor_x, _cursor_y = opencode_capture()
