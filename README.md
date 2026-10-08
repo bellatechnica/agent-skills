@@ -89,11 +89,15 @@ with a live tool call before each session launch. When that preflight fails, it
 announces a fallback to tmux messaging rather than failing silently; if tmux
 cannot reach the other session either, it reports the blocker.
 
-The server, the `agent-relay-message` skill that drives it, and the instructions
-for running both, are in the
-[agent-relay](https://github.com/bellatechnica/agent-relay) repository.
-Install that skill alongside the MCP server. `session-message` relies on it for
-the listener protocol and wake notices, and uses `tmux-message` for tmux delivery.
+The server, the `agent-relay-message` skill that drives it, and the
+instructions for running both, are in the
+[agent-relay](https://github.com/bellatechnica/agent-relay) repository. Install
+that skill's whole directory, not only its `SKILL.md`, alongside the MCP
+server: its per-client listener rules, its instructions for sending a wake
+notice, and its helper scripts are separate files in that directory and its
+subdirectories. `session-message` relies on that skill for Relay operations
+including wake notices, `tmux-message` refers to it for Relay wake notices, and
+`session-message` uses `tmux-message` for tmux delivery.
 
 ## Adding a skill
 

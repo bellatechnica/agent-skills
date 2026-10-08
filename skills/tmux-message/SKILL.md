@@ -36,7 +36,8 @@ distinguish a confirmed pre-send refusal from an uncertain attempt.
       From <session>:<window>.<pane> (<short role>):
 
   Agent Relay wake notices are the only exception. They carry no payload or
-  authority and use the fixed format in the `agent-relay-message` skill.
+  authority and use the fixed format in `wake.md` in the
+  `agent-relay-message` skill's directory.
 - A busy session is valid only when its structurally recognized composer is
   still visible. Activity text without a composer is `UNKNOWN layout`; only the
   inspection-authorized fallback can permit delivery on that refused shape.
@@ -125,9 +126,10 @@ Direct inspection means the caller itself reading pane or tmux state outside the
 sender scripts, such as its own `tmux capture-pane` or a tmux listing. It is
 allowed read-only by default and forbidden only when a separate instruction
 explicitly disallows direct inspection. The captures and pane enumeration that
-`tmux_send.py` and the Relay wake helper perform internally are part of sending,
-print no pane content, and are not direct inspection; an instruction disallowing
-direct inspection does not restrict them.
+`tmux_send.py` and the Relay wake helper (documented in the
+`agent-relay-message` skill's `wake.md`) perform internally are part of
+sending, print no pane content, and are not direct inspection; an instruction
+disallowing direct inspection does not restrict them.
 
 When direct inspection is allowed, the caller may quote or summarize the pane
 content needed to explain its finding in a report, record, or Relay message.
@@ -241,8 +243,8 @@ use the inspection-authorized fallback. Otherwise wait for the operator or
 target session to clear the composer independently.
 
 The `agent-relay-message` helper performs a separate automatic exception for an
-already occupied, complete Relay wake notice. Wake notices are idempotent;
-normal messages are not.
+already occupied, complete Relay wake notice, described in that skill's
+`wake.md`. Wake notices are idempotent; normal messages are not.
 
 ### `DIALOG`
 
