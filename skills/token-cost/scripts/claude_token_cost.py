@@ -10,7 +10,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, NamedTuple
 from zoneinfo import ZoneInfo
 
 
@@ -149,20 +149,36 @@ def project_name(path: Path, root: Path) -> str:
     return parts[0] if len(parts) > 1 else "(root)"
 
 
-def line_usage(usage: dict) -> tuple:
-    """One line's usage as a comparable tuple, never mixed with another line's.
+class LineUsage(NamedTuple):
+    """One line's usage. Tuple order is the selection order (see line_usage)."""
 
-    The tuple order is the selection order between lines of one response, so
+    has_input: bool
+    output: int
+    input_side: int
+    cache_read: int
+    cache_write: int
+    input: int
+    has_split: bool
+    write_5m: int
+    write_1h: int
+
+
+def line_usage(usage: dict) -> LineUsage:
+    """One line's usage as a comparable value, never mixed with another line's.
+
+    The field order is the selection order between lines of one response, so
     the chosen line does not depend on file scan order:
-    1. the largest total input side (uncached input + cache write + cache
-       read): a response cannot be complete without its prompt, so a
-       placeholder that carries output but zero input loses to the real line;
+    1. a line with some input side (uncached input + cache write + cache read)
+       beats one with none: a response cannot be complete without its prompt,
+       so a placeholder that carries output but zero input loses;
     2. the largest output_tokens: lines of one streamed response share the
-       prompt and differ in output, which only grows;
-    3. the remaining counters, then the TTL split, as deterministic
-       tie-breakers. Where two lines with equal counters split a write
-       differently, the larger 5-minute part wins, which prices the write at
-       the lower, default-TTL rate, as a flat total without a split would be.
+       prompt and differ in output, which only grows, so the final line holds
+       the maximum;
+    3. the largest input side, then the remaining counters and the TTL split,
+       as deterministic tie-breakers. Where two lines with equal counters split
+       a write differently, the larger 5-minute part wins, which prices the
+       write at the lower, default-TTL rate, as a flat total without a split
+       would be.
     A line that has a TTL split but no flat cache write counter is given
     the split's sum as its cache write. A split whose parts are all zero
     against a non-zero flat total is a placeholder and counts as no split.
@@ -173,16 +189,31 @@ def line_usage(usage: dict) -> tuple:
     write_5m = int(split.get("ephemeral_5m_input_tokens", 0) or 0)
     write_1h = int(split.get("ephemeral_1h_input_tokens", 0) or 0)
     cache_write = int(usage.get("cache_creation_input_tokens", 0) or 0) or (write_5m + write_1h)
-    has_split = bool(split) and (write_5m + write_1h > 0 or cache_write == 0)
+    input_side = input_tokens + cache_write + cache_read
+    return LineUsage(
+        has_input=input_side > 0,
+        output=int(usage.get("output_tokens", 0) or 0),
+        input_side=input_side,
+        cache_read=cache_read,
+        cache_write=cache_write,
+        input=input_tokens,
+        has_split=bool(split) and (write_5m + write_1h > 0 or cache_write == 0),
+        write_5m=write_5m,
+        write_1h=write_1h,
+    )
+
+
+def lines_disagree(kept: LineUsage, other: LineUsage) -> bool:
+    """Whether two lines of one response carry different counters, or different
+    TTL splits where both carry one (a split present on one line only is not a
+    disagreement: the flat counters already cover that pair)."""
+    counters = ("output", "input_side", "cache_read", "cache_write", "input")
+    if any(getattr(kept, name) != getattr(other, name) for name in counters):
+        return True
     return (
-        input_tokens + cache_write + cache_read,
-        int(usage.get("output_tokens", 0) or 0),
-        cache_read,
-        cache_write,
-        input_tokens,
-        has_split,
-        write_5m,
-        write_1h,
+        kept.has_split
+        and other.has_split
+        and (kept.write_5m, kept.write_1h) != (other.write_5m, other.write_1h)
     )
 
 
@@ -243,15 +274,14 @@ def read_usage(root: Path, start: datetime, end: datetime):
                     "project": project,
                     "turn_id": f"{path}#{turn_seq}",
                     "usage": chosen,
+                    "max_input_side": chosen.input_side,
                     "disagrees": False,
                 }
             elif chosen != response["usage"]:
-                # A TTL split can legitimately be present on one line only;
-                # two splits that both exist must agree.
-                kept = response["usage"]
-                if chosen[:5] != kept[:5] or (chosen[5] and kept[5] and chosen[6:] != kept[6:]):
+                if lines_disagree(response["usage"], chosen):
                     response["disagrees"] = True
                 response["usage"] = max(response["usage"], chosen)
+            response["max_input_side"] = max(response["max_input_side"], chosen.input_side)
             ts_raw = record.get("timestamp")
             timestamp = parse_timestamp(ts_raw, None) if ts_raw else None
             if timestamp is not None:
@@ -272,7 +302,13 @@ def read_usage(root: Path, start: datetime, end: datetime):
         if response["disagrees"]:
             diagnostics["responses_with_disagreeing_usage_lines"] += 1
 
-        _, output_tokens, cache_read, flat_write, input_tokens, has_split, write_5m, write_1h = response["usage"]
+        kept = response["usage"]
+        if kept.input_side < response["max_input_side"]:
+            # The greatest-output line is not the one with the largest prompt:
+            # the chosen line is still taken whole, but the case is counted.
+            diagnostics["chosen_line_input_side_below_another_line"] += 1
+        output_tokens, cache_read, flat_write, input_tokens = kept.output, kept.cache_read, kept.cache_write, kept.input
+        has_split, write_5m, write_1h = kept.has_split, kept.write_5m, kept.write_1h
         if has_split:
             if flat_write and (write_1h + write_5m) != flat_write:
                 diagnostics["ttl_split_mismatch"] += 1

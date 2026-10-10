@@ -238,6 +238,40 @@ class FinalUsagePerResponse(unittest.TestCase):
             self.assertEqual((events[0]["cache_write_5m"], events[0]["cache_write_1h"]), (500, 0))
             self.assertEqual(diagnostics["responses_with_disagreeing_usage_lines"], 1)
 
+    def test_larger_early_prompt_does_not_cost_the_final_output_and_is_counted(self):
+        early = {"input_tokens": 20000, "output_tokens": 3}
+        final = {
+            "input_tokens": 1000,
+            "cache_creation_input_tokens": 12000,
+            "output_tokens": 400,
+        }
+        for lines in ([early, final], [final, early]):
+            events, diagnostics = read([line("msg_a", f"b{i}", u) for i, u in enumerate(lines)])
+            self.assertEqual(events[0]["output_tokens"], 400)
+            self.assertEqual(events[0]["input_tokens"], 1000)
+            self.assertEqual(events[0]["cache_write_5m"], 12000)
+            self.assertEqual(diagnostics["chosen_line_input_side_below_another_line"], 1)
+
+    def test_diagnostic_is_silent_when_the_chosen_line_has_the_largest_prompt(self):
+        _, diagnostics = read(self.STREAMED)
+        self.assertNotIn("chosen_line_input_side_below_another_line", diagnostics)
+
+    def test_disagreement_count_is_the_same_in_both_line_orders(self):
+        in_5m = usage(9, write_1h=0)
+        in_5m["cache_creation_input_tokens"] = 500
+        in_5m["cache_creation"] = {"ephemeral_5m_input_tokens": 500, "ephemeral_1h_input_tokens": 0}
+        in_1h = usage(9, write_1h=500)
+        split_only = {
+            "input_tokens": 5,
+            "output_tokens": 9,
+            "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 500},
+        }
+        flat_only = {"input_tokens": 5, "cache_creation_input_tokens": 500, "output_tokens": 9}
+        for first, second, expected in ((in_5m, in_1h, 1), (split_only, flat_only, 0)):
+            for lines in ([first, second], [second, first]):
+                _, diagnostics = read([line("msg_a", f"b{i}", u) for i, u in enumerate(lines)])
+                self.assertEqual(diagnostics.get("responses_with_disagreeing_usage_lines", 0), expected)
+
 
 if __name__ == "__main__":
     unittest.main()
