@@ -174,9 +174,12 @@ def merge_usage(final: dict, usage: dict) -> bool:
     breakdown = usage.get("cache_creation") or {}
     merged = final.setdefault("cache_creation", {})
     # Compare against what earlier lines held, not the dict being filled by
-    # this line's own keys; a sub-counter one side omits reads as 0.
+    # this line's own keys; a sub-counter one side omits reads as 0. Only two
+    # lines that both carry a breakdown are compared, so the answer does not
+    # depend on whether a flat-only line came first (the flat counters above
+    # already cover that pair).
     earlier = dict(merged)
-    if earlier:
+    if earlier and breakdown:
         for key in earlier.keys() | breakdown.keys():
             if int(earlier.get(key, 0) or 0) != int(breakdown.get(key, 0) or 0):
                 differs = True
@@ -275,7 +278,7 @@ def read_usage(root: Path, start: datetime, end: datetime):
         # Lines of one response that put the same write under different TTLs
         # merge to a split larger than the flat total; the flat total is the
         # reconciling value then, priced under the 5-minute assumption.
-        if response["disagrees"] and sum(cache_creation.values()) > flat_write:
+        if response["disagrees"] and flat_write and sum(cache_creation.values()) > flat_write:
             diagnostics["ttl_split_exceeds_flat_total"] += 1
             cache_creation = {}
         write_1h = cache_creation.get("ephemeral_1h_input_tokens", 0)

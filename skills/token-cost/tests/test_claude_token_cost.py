@@ -170,5 +170,31 @@ class FinalUsagePerResponse(unittest.TestCase):
             _, diagnostics = read([line("msg_a", f"b{i}", u) for i, u in enumerate(lines)])
             self.assertEqual(diagnostics.get("responses_with_disagreeing_usage_lines", 0), 1)
 
+    def test_flat_only_and_breakdown_lines_do_not_disagree_in_either_order(self):
+        flat_only = {
+            "input_tokens": 1,
+            "cache_creation_input_tokens": 500,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 5,
+        }
+        with_breakdown = usage(5, input_tokens=1, read=0, write_1h=500)
+        with_breakdown["cache_creation"] = {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 500}
+        for lines in ([flat_only, with_breakdown], [with_breakdown, flat_only]):
+            events, diagnostics = read([line("msg_a", f"b{i}", u) for i, u in enumerate(lines)])
+            self.assertEqual(diagnostics.get("responses_with_disagreeing_usage_lines", 0), 0)
+            self.assertEqual(events[0]["cache_write_1h"], 500)
+
+    def test_split_is_kept_when_no_flat_cache_write_counter_is_present(self):
+        def no_flat(output: int) -> dict:
+            u = usage(output)
+            del u["cache_creation_input_tokens"]
+            u["cache_creation"] = {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 500}
+            return u
+
+        events, diagnostics = read([line("msg_a", "text", no_flat(2)), line("msg_a", "tool_use", no_flat(5))])
+        self.assertEqual(events[0]["cache_write_1h"], 500)
+        self.assertNotIn("ttl_split_exceeds_flat_total", diagnostics)
+
+
 if __name__ == "__main__":
     unittest.main()
