@@ -152,14 +152,32 @@ class FinalUsagePerResponse(unittest.TestCase):
         with self.assertRaises(argparse.ArgumentTypeError):
             read([line("msg_a", "text", usage(5)), line("msg_a", "tool_use", usage(5), timestamp="garbage")])
 
-    def test_same_write_under_different_ttls_is_priced_once_from_the_flat_total(self):
+    def test_same_write_under_different_ttls_is_priced_once_in_either_order(self):
         a = usage(5, write_1h=0)
         a["cache_creation_input_tokens"] = 500
         a["cache_creation"] = {"ephemeral_5m_input_tokens": 500, "ephemeral_1h_input_tokens": 0}
         b = usage(5, write_1h=500)
-        events, diagnostics = read([line("msg_a", "text", a), line("msg_a", "tool_use", b)])
-        self.assertEqual(events[0]["cache_write_5m"] + events[0]["cache_write_1h"], 500)
-        self.assertEqual(diagnostics["ttl_split_exceeds_flat_total"], 1)
+        for lines in ([a, b], [b, a]):
+            events, _ = read([line("msg_a", f"b{i}", u) for i, u in enumerate(lines)])
+            self.assertEqual(events[0]["cache_write_5m"] + events[0]["cache_write_1h"], 500)
+
+    def test_prompt_split_differently_on_two_lines_is_never_counted_twice(self):
+        # A proxy backend reports the whole prompt as uncached input on an early
+        # line and splits it into uncached input and cache write on the last.
+        unsplit = {"input_tokens": 13430, "output_tokens": 40}
+        split = {
+            "input_tokens": 1310,
+            "cache_creation_input_tokens": 12898,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 40,
+        }
+        grown = dict(split, output_tokens=220)
+        for lines in ([unsplit, split], [split, unsplit], [unsplit, grown], [grown, unsplit]):
+            events, _ = read([line("msg_a", f"b{i}", u) for i, u in enumerate(lines)])
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events[0]["input_tokens"], 1310)
+            self.assertEqual(events[0]["cache_write_5m"], 12898)
+            self.assertEqual(events[0]["output_tokens"], lines[0 if lines[0] is grown else 1]["output_tokens"] if grown in lines else 40)
 
     def test_sub_counter_disagreement_does_not_depend_on_line_order(self):
         zero_5m = usage(5)

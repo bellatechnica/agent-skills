@@ -149,43 +149,27 @@ def project_name(path: Path, root: Path) -> str:
     return parts[0] if len(parts) > 1 else "(root)"
 
 
-USAGE_COUNTERS = (
-    "input_tokens",
-    "cache_creation_input_tokens",
-    "cache_read_input_tokens",
-    "output_tokens",
-)
+def line_usage(usage: dict) -> tuple:
+    """One line's usage as a comparable tuple, never mixed with another line's.
 
-
-def merge_usage(final: dict, usage: dict) -> bool:
-    """Raise `final` to the per-field maximum of itself and `usage`.
-
-    Returns True when `usage` disagreed with what `final` already held: a
-    counter with a different value (a counter a line omits counts as 0), or a
-    cache TTL sub-counter present on only one of the lines.
+    The order is the selection order between lines of one response: the
+    largest output_tokens, then the largest total input side (uncached input
+    plus cache write plus cache read), then the remaining fields, so the
+    chosen line does not depend on file scan order. The last element holds the
+    cache TTL split, which is only meaningful together with its own line.
     """
-    differs = False
-    for key in USAGE_COUNTERS:
-        value = int(usage.get(key, 0) or 0)
-        previous = final.get(key, 0)
-        if value != previous and key in final:
-            differs = True
-        final[key] = max(previous, value)
-    breakdown = usage.get("cache_creation") or {}
-    merged = final.setdefault("cache_creation", {})
-    # Compare against what earlier lines held, not the dict being filled by
-    # this line's own keys; a sub-counter one side omits reads as 0. Only two
-    # lines that both carry a breakdown are compared, so the answer does not
-    # depend on whether a flat-only line came first (the flat counters above
-    # already cover that pair).
-    earlier = dict(merged)
-    if earlier and breakdown:
-        for key in earlier.keys() | breakdown.keys():
-            if int(earlier.get(key, 0) or 0) != int(breakdown.get(key, 0) or 0):
-                differs = True
-    for key, raw in breakdown.items():
-        merged[key] = max(merged.get(key, 0), int(raw or 0))
-    return differs
+    input_tokens = int(usage.get("input_tokens", 0) or 0)
+    cache_write = int(usage.get("cache_creation_input_tokens", 0) or 0)
+    cache_read = int(usage.get("cache_read_input_tokens", 0) or 0)
+    split = usage.get("cache_creation") or {}
+    return (
+        int(usage.get("output_tokens", 0) or 0),
+        input_tokens + cache_write + cache_read,
+        cache_read,
+        cache_write,
+        input_tokens,
+        tuple(sorted((key, int(value or 0)) for key, value in split.items())),
+    )
 
 
 def read_usage(root: Path, start: datetime, end: datetime):
@@ -194,12 +178,16 @@ def read_usage(root: Path, start: datetime, end: datetime):
     # block (text, tool_use, ...) of a response is written as its own JSONL
     # line, and the lines of one response do not carry the same usage: lines
     # written while the response was still streaming hold a smaller
-    # output_tokens, and a line (or a replayed copy in another file) may hold
-    # placeholder zeros. Counters only ever rise as a response completes, so
-    # the per-field maximum across all lines of the response is its final
-    # usage. Resumed/forked sessions also replay prior lines verbatim into new
-    # session files, so the merge is global across all files, not just
-    # within one, and it is a max, never a sum.
+    # output_tokens, a line (or a replayed copy in another file) may hold
+    # placeholder zeros, and a proxy backend may report the prompt unsplit on
+    # an early line and split into uncached input and cache write on the last.
+    # The response's usage is taken WHOLE from the one line that is greatest
+    # under line_usage()'s order (the most complete line); fields are never
+    # combined across lines, because lines can partition the same prompt
+    # differently and a per-field maximum would count it twice. Resumed/forked
+    # sessions also replay prior lines verbatim into new session files, so the
+    # selection is global across all files, not just within one, and it picks
+    # one line, never a sum.
     # The response's timestamp, model, project and turn come from its earliest
     # line (ties: the file scanned first, files are scanned in sorted order),
     # so window membership does not depend on which file holds which lines.
@@ -232,6 +220,7 @@ def read_usage(root: Path, start: datetime, end: datetime):
             dedupe_key = (message.get("id"), record.get("requestId"))
             if dedupe_key == (None, None):
                 dedupe_key = (record.get("uuid"),)
+            chosen = line_usage(usage)
             response = responses.get(dedupe_key)
             if response is None:
                 responses[dedupe_key] = response = {
@@ -239,10 +228,16 @@ def read_usage(root: Path, start: datetime, end: datetime):
                     "model": "unknown",
                     "project": project,
                     "turn_id": f"{path}#{turn_seq}",
-                    "final": {},
-                    "has_breakdown": False,
+                    "usage": chosen,
                     "disagrees": False,
                 }
+            elif chosen != response["usage"]:
+                # The TTL split (last element) can legitimately be present on
+                # one line only; two splits that both exist must agree.
+                kept = response["usage"]
+                if chosen[:-1] != kept[:-1] or (chosen[-1] and kept[-1] and chosen[-1] != kept[-1]):
+                    response["disagrees"] = True
+                response["usage"] = max(response["usage"], chosen)
             ts_raw = record.get("timestamp")
             timestamp = parse_timestamp(ts_raw, None) if ts_raw else None
             if timestamp is not None:
@@ -251,10 +246,6 @@ def read_usage(root: Path, start: datetime, end: datetime):
                     response["model"] = message.get("model") or "unknown"
                     response["project"] = project
                     response["turn_id"] = f"{path}#{turn_seq}"
-            if usage.get("cache_creation"):
-                response["has_breakdown"] = True
-            if merge_usage(response["final"], usage):
-                response["disagrees"] = True
 
     events: list[dict] = []
     for response in responses.values():
@@ -267,20 +258,8 @@ def read_usage(root: Path, start: datetime, end: datetime):
         if response["disagrees"]:
             diagnostics["responses_with_disagreeing_usage_lines"] += 1
 
-        final = response["final"]
-        flat_write = final["cache_creation_input_tokens"]
-        cache_creation = final["cache_creation"] if response["has_breakdown"] else {}
-        # An all-zero breakdown against a non-zero flat total is a placeholder
-        # line's breakdown meeting another line's flat-only schema; the flat
-        # total is authoritative then.
-        if flat_write and not sum(cache_creation.values()):
-            cache_creation = {}
-        # Lines of one response that put the same write under different TTLs
-        # merge to a split larger than the flat total; the flat total is the
-        # reconciling value then, priced under the 5-minute assumption.
-        if response["disagrees"] and flat_write and sum(cache_creation.values()) > flat_write:
-            diagnostics["ttl_split_exceeds_flat_total"] += 1
-            cache_creation = {}
+        output_tokens, _, cache_read, flat_write, input_tokens, split_items = response["usage"]
+        cache_creation = dict(split_items)
         write_1h = cache_creation.get("ephemeral_1h_input_tokens", 0)
         write_5m = cache_creation.get("ephemeral_5m_input_tokens", 0)
         if cache_creation:
@@ -298,11 +277,11 @@ def read_usage(root: Path, start: datetime, end: datetime):
                 "model": response["model"],
                 "project": response["project"],
                 "turn_id": response["turn_id"],
-                "input_tokens": final["input_tokens"],
+                "input_tokens": input_tokens,
                 "cache_write_5m": write_5m,
                 "cache_write_1h": write_1h,
-                "cache_read_tokens": final["cache_read_input_tokens"],
-                "output_tokens": final["output_tokens"],
+                "cache_read_tokens": cache_read,
+                "output_tokens": output_tokens,
             }
         )
     return events, dict(diagnostics)
