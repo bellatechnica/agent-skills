@@ -272,6 +272,29 @@ class FinalUsagePerResponse(unittest.TestCase):
                 _, diagnostics = read([line("msg_a", f"b{i}", u) for i, u in enumerate(lines)])
                 self.assertEqual(diagnostics.get("responses_with_disagreeing_usage_lines", 0), expected)
 
+    def test_split_line_beats_a_larger_unsplit_estimate_on_an_output_tie(self):
+        unsplit = {"input_tokens": 14500, "output_tokens": 40}
+        split = {
+            "input_tokens": 1310,
+            "cache_creation_input_tokens": 12898,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 40,
+            "cache_creation": {"ephemeral_5m_input_tokens": 12898, "ephemeral_1h_input_tokens": 0},
+        }
+        for lines in ([unsplit, split], [split, unsplit]):
+            events, diagnostics = read([line("msg_a", f"b{i}", u) for i, u in enumerate(lines)])
+            self.assertEqual(events[0]["input_tokens"], 1310)
+            self.assertEqual(events[0]["cache_write_5m"], 12898)
+            self.assertEqual(diagnostics["chosen_line_input_side_below_another_line"], 1)
+
+    def test_zero_input_placeholder_with_the_largest_output_is_counted(self):
+        real = {"input_tokens": 100, "cache_read_input_tokens": 9000, "output_tokens": 5}
+        placeholder = {"input_tokens": 0, "output_tokens": 400}
+        for lines in ([real, placeholder], [placeholder, real]):
+            events, diagnostics = read([line("msg_a", f"b{i}", u) for i, u in enumerate(lines)])
+            self.assertEqual(events[0]["cache_read_tokens"], 9000)
+            self.assertEqual(diagnostics["chosen_line_output_below_another_line"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

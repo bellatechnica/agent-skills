@@ -154,11 +154,11 @@ class LineUsage(NamedTuple):
 
     has_input: bool
     output: int
+    has_split: bool
     input_side: int
     cache_read: int
     cache_write: int
     input: int
-    has_split: bool
     write_5m: int
     write_1h: int
 
@@ -174,7 +174,10 @@ def line_usage(usage: dict) -> LineUsage:
     2. the largest output_tokens: lines of one streamed response share the
        prompt and differ in output, which only grows, so the final line holds
        the maximum;
-    3. the largest input side, then the remaining counters and the TTL split,
+    3. a line that carries a TTL split beats one that does not (the more
+       specific record: on an output tie a proxy backend's unsplit prompt
+       estimate loses to the split line whatever their sizes);
+    4. the largest input side, then the remaining counters and the TTL split,
        as deterministic tie-breakers. Where two lines with equal counters split
        a write differently, the larger 5-minute part wins, which prices the
        write at the lower, default-TTL rate, as a flat total without a split
@@ -193,11 +196,11 @@ def line_usage(usage: dict) -> LineUsage:
     return LineUsage(
         has_input=input_side > 0,
         output=int(usage.get("output_tokens", 0) or 0),
+        has_split=bool(split) and (write_5m + write_1h > 0 or cache_write == 0),
         input_side=input_side,
         cache_read=cache_read,
         cache_write=cache_write,
         input=input_tokens,
-        has_split=bool(split) and (write_5m + write_1h > 0 or cache_write == 0),
         write_5m=write_5m,
         write_1h=write_1h,
     )
@@ -275,6 +278,7 @@ def read_usage(root: Path, start: datetime, end: datetime):
                     "turn_id": f"{path}#{turn_seq}",
                     "usage": chosen,
                     "max_input_side": chosen.input_side,
+                    "max_output": chosen.output,
                     "disagrees": False,
                 }
             elif chosen != response["usage"]:
@@ -282,6 +286,7 @@ def read_usage(root: Path, start: datetime, end: datetime):
                     response["disagrees"] = True
                 response["usage"] = max(response["usage"], chosen)
             response["max_input_side"] = max(response["max_input_side"], chosen.input_side)
+            response["max_output"] = max(response["max_output"], chosen.output)
             ts_raw = record.get("timestamp")
             timestamp = parse_timestamp(ts_raw, None) if ts_raw else None
             if timestamp is not None:
@@ -307,6 +312,10 @@ def read_usage(root: Path, start: datetime, end: datetime):
             # The greatest-output line is not the one with the largest prompt:
             # the chosen line is still taken whole, but the case is counted.
             diagnostics["chosen_line_input_side_below_another_line"] += 1
+        if kept.output < response["max_output"]:
+            # A line with more output lost (it carried no input side at all,
+            # the has-input guard): counted for the same reason.
+            diagnostics["chosen_line_output_below_another_line"] += 1
         output_tokens, cache_read, flat_write, input_tokens = kept.output, kept.cache_read, kept.cache_write, kept.input
         has_split, write_5m, write_1h = kept.has_split, kept.write_5m, kept.write_1h
         if has_split:
