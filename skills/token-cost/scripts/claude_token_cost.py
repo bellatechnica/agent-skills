@@ -173,12 +173,15 @@ def merge_usage(final: dict, usage: dict) -> bool:
         final[key] = max(previous, value)
     breakdown = usage.get("cache_creation") or {}
     merged = final.setdefault("cache_creation", {})
+    # Compare against what earlier lines held, not the dict being filled by
+    # this line's own keys.
+    earlier = dict(merged)
     for key, raw in breakdown.items():
         value = int(raw or 0)
-        if key in merged:
-            differs = differs or merged[key] != value
+        if key in earlier:
+            differs = differs or earlier[key] != value
         else:
-            differs = differs or (bool(merged) and value != 0)
+            differs = differs or (bool(earlier) and value != 0)
         merged[key] = max(merged.get(key, 0), value)
     return differs
 
@@ -239,8 +242,13 @@ def read_usage(root: Path, start: datetime, end: datetime):
                     "disagrees": False,
                 }
             ts_raw = record.get("timestamp")
+            timestamp = None
             if ts_raw:
-                timestamp = parse_timestamp(ts_raw, None)
+                try:
+                    timestamp = parse_timestamp(ts_raw, None)
+                except argparse.ArgumentTypeError:
+                    diagnostics["unparseable_timestamp_lines"] += 1
+            if timestamp is not None:
                 if response["timestamp"] is None or timestamp < response["timestamp"]:
                     response["timestamp"] = timestamp
                     response["model"] = message.get("model") or "unknown"

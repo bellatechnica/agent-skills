@@ -139,6 +139,21 @@ class FinalUsagePerResponse(unittest.TestCase):
         _, diagnostics = read([line("msg_a", "text", first), line("msg_a", "tool_use", second)])
         self.assertEqual(diagnostics.get("responses_with_disagreeing_usage_lines", 0), 1)
 
+    def test_identical_lines_with_a_5m_then_1h_breakdown_do_not_disagree(self):
+        u = usage(8, write_1h=650)
+        u["cache_creation"] = {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 650}
+        _, one = read([line("msg_a", "text", u)])
+        _, two = read([line("msg_a", "text", u), line("msg_a", "tool_use", u)])
+        self.assertEqual(one.get("responses_with_disagreeing_usage_lines", 0), 0)
+        self.assertEqual(two.get("responses_with_disagreeing_usage_lines", 0), 0)
+
+    def test_unparseable_timestamp_on_a_replayed_line_is_counted_not_fatal(self):
+        events, diagnostics = read(
+            [line("msg_a", "text", usage(5)), line("msg_a", "tool_use", usage(5), timestamp="garbage")]
+        )
+        self.assertEqual(len(events), 1)
+        self.assertEqual(diagnostics["unparseable_timestamp_lines"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
