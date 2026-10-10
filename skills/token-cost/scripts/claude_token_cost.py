@@ -149,10 +149,51 @@ def project_name(path: Path, root: Path) -> str:
     return parts[0] if len(parts) > 1 else "(root)"
 
 
+USAGE_COUNTERS = (
+    "input_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+    "output_tokens",
+)
+
+
+def merge_usage(final: dict, usage: dict) -> bool:
+    """Raise `final` to the per-field maximum of itself and `usage`.
+
+    Returns True when `usage` held a counter below one already in `final`,
+    that is, when the two lines of one response disagreed.
+    """
+    differs = False
+    for key in USAGE_COUNTERS:
+        value = int(usage.get(key, 0) or 0)
+        previous = final.get(key, 0)
+        if value != previous and key in final:
+            differs = True
+        final[key] = max(previous, value)
+    breakdown = usage.get("cache_creation") or {}
+    merged = final.setdefault("cache_creation", {})
+    for key, raw in breakdown.items():
+        value = int(raw or 0)
+        if key in merged and merged[key] != value:
+            differs = True
+        merged[key] = max(merged.get(key, 0), value)
+    return differs
+
+
 def read_usage(root: Path, start: datetime, end: datetime):
-    events: list[dict] = []
     diagnostics = defaultdict(int)
-    seen: set[tuple] = set()
+    # One entry per API response, keyed globally across files. Every content
+    # block (text, tool_use, ...) of a response is written as its own JSONL
+    # line, and the lines of one response do not carry the same usage: lines
+    # written while the response was still streaming hold a smaller
+    # output_tokens, and a line (or a replayed copy in another file) may hold
+    # placeholder zeros. Counters only ever rise as a response completes, so
+    # the per-field maximum across all lines of the response is its final
+    # usage. Resumed/forked sessions also replay prior lines verbatim into new
+    # session files, so the merge is global across all files, not just
+    # within one, and it is a max, never a sum.
+    responses: dict[tuple, dict] = {}
+    disagreeing: set[tuple] = set()
     for path, handle in iter_jsonl(root):
         project = project_name(path, root)
         turn_seq = 0
@@ -176,52 +217,62 @@ def read_usage(root: Path, start: datetime, end: datetime):
             if not usage:
                 continue
 
-            # Every content block (text, tool_use, ...) of one API response is
-            # written as its own JSONL line and repeats the SAME usage object.
-            # Dedup on (message id, requestId); resumed/forked sessions also
-            # replay prior lines verbatim into new session files, so dedup is
-            # global across all files, not just within one.
             dedupe_key = (message.get("id"), record.get("requestId"))
             if dedupe_key == (None, None):
                 dedupe_key = (record.get("uuid"),)
-            if dedupe_key in seen:
-                continue
-            seen.add(dedupe_key)
-
-            ts_raw = record.get("timestamp")
-            if not ts_raw:
-                diagnostics["missing_timestamp"] += 1
-                continue
-            timestamp = parse_timestamp(ts_raw, None)
-            if timestamp < start or timestamp > end:
-                continue
-
-            cache_creation = usage.get("cache_creation") or {}
-            write_1h = int(cache_creation.get("ephemeral_1h_input_tokens", 0) or 0)
-            write_5m = int(cache_creation.get("ephemeral_5m_input_tokens", 0) or 0)
-            if cache_creation:
-                flat_write = int(usage.get("cache_creation_input_tokens", 0) or 0)
-                if flat_write and (write_1h + write_5m) != flat_write:
-                    diagnostics["ttl_split_mismatch"] += 1
-            else:
-                # Older/foreign records may lack the TTL breakdown; Anthropic's
-                # default cache TTL is 5 minutes, so attribute the flat total there.
-                write_5m = int(usage.get("cache_creation_input_tokens", 0) or 0)
-                diagnostics["ttl_unspecified_assumed_5m"] += 1
-
-            events.append(
-                {
-                    "timestamp": timestamp,
+            response = responses.get(dedupe_key)
+            if response is None:
+                responses[dedupe_key] = response = {
+                    "timestamp_raw": record.get("timestamp"),
                     "model": message.get("model") or "unknown",
                     "project": project,
                     "turn_id": f"{path}#{turn_seq}",
-                    "input_tokens": int(usage.get("input_tokens", 0) or 0),
-                    "cache_write_5m": write_5m,
-                    "cache_write_1h": write_1h,
-                    "cache_read_tokens": int(usage.get("cache_read_input_tokens", 0) or 0),
-                    "output_tokens": int(usage.get("output_tokens", 0) or 0),
+                    "final": {},
+                    "has_breakdown": False,
                 }
-            )
+            if usage.get("cache_creation"):
+                response["has_breakdown"] = True
+            if merge_usage(response["final"], usage):
+                disagreeing.add(dedupe_key)
+    diagnostics["responses_with_disagreeing_usage_lines"] = len(disagreeing)
+
+    events: list[dict] = []
+    for response in responses.values():
+        ts_raw = response["timestamp_raw"]
+        if not ts_raw:
+            diagnostics["missing_timestamp"] += 1
+            continue
+        timestamp = parse_timestamp(ts_raw, None)
+        if timestamp < start or timestamp > end:
+            continue
+
+        final = response["final"]
+        cache_creation = final["cache_creation"] if response["has_breakdown"] else {}
+        write_1h = cache_creation.get("ephemeral_1h_input_tokens", 0)
+        write_5m = cache_creation.get("ephemeral_5m_input_tokens", 0)
+        flat_write = final["cache_creation_input_tokens"]
+        if cache_creation:
+            if flat_write and (write_1h + write_5m) != flat_write:
+                diagnostics["ttl_split_mismatch"] += 1
+        else:
+            # Older/foreign records may lack the TTL breakdown; Anthropic's
+            # default cache TTL is 5 minutes, so attribute the flat total there.
+            write_5m = flat_write
+            diagnostics["ttl_unspecified_assumed_5m"] += 1
+
+        events.append(
+            {
+                "timestamp": timestamp,
+                "model": response["model"],
+                "project": response["project"],
+                "turn_id": response["turn_id"],
+                "input_tokens": final["input_tokens"],
+                "cache_write_5m": write_5m,
+                "cache_write_1h": write_1h,
+                "cache_read_tokens": final["cache_read_input_tokens"],
+                "output_tokens": final["output_tokens"],
+            }
+        )
     return events, dict(diagnostics)
 
 
