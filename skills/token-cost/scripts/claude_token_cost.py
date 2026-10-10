@@ -160,8 +160,9 @@ USAGE_COUNTERS = (
 def merge_usage(final: dict, usage: dict) -> bool:
     """Raise `final` to the per-field maximum of itself and `usage`.
 
-    Returns True when `usage` held a counter below one already in `final`,
-    that is, when the two lines of one response disagreed.
+    Returns True when `usage` disagreed with what `final` already held: a
+    counter with a different value (a counter a line omits counts as 0), or a
+    cache TTL sub-counter present on only one of the lines.
     """
     differs = False
     for key in USAGE_COUNTERS:
@@ -174,8 +175,10 @@ def merge_usage(final: dict, usage: dict) -> bool:
     merged = final.setdefault("cache_creation", {})
     for key, raw in breakdown.items():
         value = int(raw or 0)
-        if key in merged and merged[key] != value:
-            differs = True
+        if key in merged:
+            differs = differs or merged[key] != value
+        else:
+            differs = differs or (bool(merged) and value != 0)
         merged[key] = max(merged.get(key, 0), value)
     return differs
 
@@ -192,8 +195,12 @@ def read_usage(root: Path, start: datetime, end: datetime):
     # usage. Resumed/forked sessions also replay prior lines verbatim into new
     # session files, so the merge is global across all files, not just
     # within one, and it is a max, never a sum.
+    # The response's timestamp, model, project and turn come from its earliest
+    # line (ties: the file scanned first, files are scanned in sorted order),
+    # so window membership does not depend on which file holds which lines.
+    # Every response under the root is held until the end because window
+    # membership is decided on the merged response.
     responses: dict[tuple, dict] = {}
-    disagreeing: set[tuple] = set()
     for path, handle in iter_jsonl(root):
         project = project_name(path, root)
         turn_seq = 0
@@ -223,34 +230,48 @@ def read_usage(root: Path, start: datetime, end: datetime):
             response = responses.get(dedupe_key)
             if response is None:
                 responses[dedupe_key] = response = {
-                    "timestamp_raw": record.get("timestamp"),
-                    "model": message.get("model") or "unknown",
+                    "timestamp": None,
+                    "model": "unknown",
                     "project": project,
                     "turn_id": f"{path}#{turn_seq}",
                     "final": {},
                     "has_breakdown": False,
+                    "disagrees": False,
                 }
+            ts_raw = record.get("timestamp")
+            if ts_raw:
+                timestamp = parse_timestamp(ts_raw, None)
+                if response["timestamp"] is None or timestamp < response["timestamp"]:
+                    response["timestamp"] = timestamp
+                    response["model"] = message.get("model") or "unknown"
+                    response["project"] = project
+                    response["turn_id"] = f"{path}#{turn_seq}"
             if usage.get("cache_creation"):
                 response["has_breakdown"] = True
             if merge_usage(response["final"], usage):
-                disagreeing.add(dedupe_key)
-    diagnostics["responses_with_disagreeing_usage_lines"] = len(disagreeing)
+                response["disagrees"] = True
 
     events: list[dict] = []
     for response in responses.values():
-        ts_raw = response["timestamp_raw"]
-        if not ts_raw:
+        timestamp = response["timestamp"]
+        if timestamp is None:
             diagnostics["missing_timestamp"] += 1
             continue
-        timestamp = parse_timestamp(ts_raw, None)
         if timestamp < start or timestamp > end:
             continue
+        if response["disagrees"]:
+            diagnostics["responses_with_disagreeing_usage_lines"] += 1
 
         final = response["final"]
+        flat_write = final["cache_creation_input_tokens"]
         cache_creation = final["cache_creation"] if response["has_breakdown"] else {}
+        # An all-zero breakdown against a non-zero flat total is a placeholder
+        # line's breakdown meeting another line's flat-only schema; the flat
+        # total is authoritative then.
+        if flat_write and not sum(cache_creation.values()):
+            cache_creation = {}
         write_1h = cache_creation.get("ephemeral_1h_input_tokens", 0)
         write_5m = cache_creation.get("ephemeral_5m_input_tokens", 0)
-        flat_write = final["cache_creation_input_tokens"]
         if cache_creation:
             if flat_write and (write_1h + write_5m) != flat_write:
                 diagnostics["ttl_split_mismatch"] += 1

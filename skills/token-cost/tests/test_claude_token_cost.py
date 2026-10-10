@@ -32,13 +32,19 @@ def usage(output: int, *, input_tokens: int = 3, read: int = 1000, write_1h: int
     }
 
 
-def line(message_id: str, block: str, usage_object: dict, request_id: str = "req_1") -> str:
+def line(
+    message_id: str,
+    block: str,
+    usage_object: dict,
+    request_id: str = "req_1",
+    timestamp: str = "2026-06-01T00:00:00Z",
+) -> str:
     return json.dumps(
         {
             "type": "assistant",
             "uuid": f"{message_id}-{block}",
             "requestId": request_id,
-            "timestamp": "2026-06-01T00:00:00Z",
+            "timestamp": timestamp,
             "message": {
                 "id": message_id,
                 "model": "claude-test",
@@ -49,12 +55,12 @@ def line(message_id: str, block: str, usage_object: dict, request_id: str = "req
     )
 
 
-def read(*files: list[str]):
+def read(*files: list[str], start: datetime = START, end: datetime = END):
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         for index, lines in enumerate(files):
             (root / f"{index}.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
-        return claude_token_cost.read_usage(root, START, END)
+        return claude_token_cost.read_usage(root, start, end)
 
 
 class FinalUsagePerResponse(unittest.TestCase):
@@ -92,6 +98,46 @@ class FinalUsagePerResponse(unittest.TestCase):
         events, diagnostics = read(self.STREAMED, second)
         self.assertEqual(sorted(event["output_tokens"] for event in events), [7, 413])
         self.assertEqual(diagnostics["responses_with_disagreeing_usage_lines"], 1)
+
+    def test_flat_cache_write_survives_an_all_zero_placeholder_breakdown(self):
+        placeholder = usage(0, input_tokens=0, read=0, write_1h=0)
+        flat_only = {
+            "input_tokens": 3,
+            "cache_creation_input_tokens": 500,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 9,
+        }
+        events, diagnostics = read([line("msg_a", "text", placeholder), line("msg_a", "tool_use", flat_only)])
+        self.assertEqual(events[0]["cache_write_5m"] + events[0]["cache_write_1h"], 500)
+        self.assertEqual(diagnostics.get("ttl_split_mismatch", 0), 0)
+        self.assertEqual(diagnostics["ttl_unspecified_assumed_5m"], 1)
+
+    def test_window_membership_does_not_depend_on_file_order(self):
+        early = line("msg_a", "text", usage(10), timestamp="2026-06-01T09:59:50Z")
+        late = line("msg_a", "tool_use", usage(400), timestamp="2026-06-01T10:00:10Z")
+        start = datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc)
+        for files in ([[late], [early, late]], [[early, late], [late]]):
+            events, _ = read(*files, start=start)
+            self.assertEqual(events, [])
+        events, _ = read([late], [early, late], start=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc))
+        self.assertEqual([event["output_tokens"] for event in events], [400])
+
+    def test_disagreement_diagnostic_counts_only_responses_in_the_window(self):
+        old = [
+            line("msg_old", "text", usage(1), timestamp="2026-02-01T00:00:00Z"),
+            line("msg_old", "tool_use", usage(5), timestamp="2026-02-01T00:00:01Z"),
+        ]
+        start = datetime(2026, 6, 1, tzinfo=timezone.utc)
+        _, diagnostics = read(old, self.STREAMED, start=start)
+        self.assertEqual(diagnostics["responses_with_disagreeing_usage_lines"], 1)
+
+    def test_a_ttl_subkey_first_seen_on_a_later_line_counts_as_disagreement(self):
+        first = usage(5, write_1h=500)
+        second = usage(5, write_1h=500)
+        second["cache_creation"] = {"ephemeral_1h_input_tokens": 500}
+        first["cache_creation"] = {"ephemeral_5m_input_tokens": 0}
+        _, diagnostics = read([line("msg_a", "text", first), line("msg_a", "tool_use", second)])
+        self.assertEqual(diagnostics.get("responses_with_disagreeing_usage_lines", 0), 1)
 
 
 if __name__ == "__main__":
