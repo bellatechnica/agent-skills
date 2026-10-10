@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 from datetime import datetime, timezone
@@ -147,13 +148,27 @@ class FinalUsagePerResponse(unittest.TestCase):
         self.assertEqual(one.get("responses_with_disagreeing_usage_lines", 0), 0)
         self.assertEqual(two.get("responses_with_disagreeing_usage_lines", 0), 0)
 
-    def test_unparseable_timestamp_on_a_replayed_line_is_counted_not_fatal(self):
-        events, diagnostics = read(
-            [line("msg_a", "text", usage(5)), line("msg_a", "tool_use", usage(5), timestamp="garbage")]
-        )
-        self.assertEqual(len(events), 1)
-        self.assertEqual(diagnostics["unparseable_timestamp_lines"], 1)
+    def test_unparseable_timestamp_on_any_line_aborts_the_read(self):
+        with self.assertRaises(argparse.ArgumentTypeError):
+            read([line("msg_a", "text", usage(5)), line("msg_a", "tool_use", usage(5), timestamp="garbage")])
 
+    def test_same_write_under_different_ttls_is_priced_once_from_the_flat_total(self):
+        a = usage(5, write_1h=0)
+        a["cache_creation_input_tokens"] = 500
+        a["cache_creation"] = {"ephemeral_5m_input_tokens": 500, "ephemeral_1h_input_tokens": 0}
+        b = usage(5, write_1h=500)
+        events, diagnostics = read([line("msg_a", "text", a), line("msg_a", "tool_use", b)])
+        self.assertEqual(events[0]["cache_write_5m"] + events[0]["cache_write_1h"], 500)
+        self.assertEqual(diagnostics["ttl_split_exceeds_flat_total"], 1)
+
+    def test_sub_counter_disagreement_does_not_depend_on_line_order(self):
+        zero_5m = usage(5)
+        zero_5m["cache_creation"] = {"ephemeral_5m_input_tokens": 0}
+        only_1h = usage(5)
+        only_1h["cache_creation"] = {"ephemeral_1h_input_tokens": 500}
+        for lines in ([zero_5m, only_1h], [only_1h, zero_5m]):
+            _, diagnostics = read([line("msg_a", f"b{i}", u) for i, u in enumerate(lines)])
+            self.assertEqual(diagnostics.get("responses_with_disagreeing_usage_lines", 0), 1)
 
 if __name__ == "__main__":
     unittest.main()

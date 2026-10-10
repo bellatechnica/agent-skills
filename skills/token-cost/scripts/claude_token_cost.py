@@ -174,15 +174,14 @@ def merge_usage(final: dict, usage: dict) -> bool:
     breakdown = usage.get("cache_creation") or {}
     merged = final.setdefault("cache_creation", {})
     # Compare against what earlier lines held, not the dict being filled by
-    # this line's own keys.
+    # this line's own keys; a sub-counter one side omits reads as 0.
     earlier = dict(merged)
+    if earlier:
+        for key in earlier.keys() | breakdown.keys():
+            if int(earlier.get(key, 0) or 0) != int(breakdown.get(key, 0) or 0):
+                differs = True
     for key, raw in breakdown.items():
-        value = int(raw or 0)
-        if key in earlier:
-            differs = differs or earlier[key] != value
-        else:
-            differs = differs or (bool(earlier) and value != 0)
-        merged[key] = max(merged.get(key, 0), value)
+        merged[key] = max(merged.get(key, 0), int(raw or 0))
     return differs
 
 
@@ -242,12 +241,7 @@ def read_usage(root: Path, start: datetime, end: datetime):
                     "disagrees": False,
                 }
             ts_raw = record.get("timestamp")
-            timestamp = None
-            if ts_raw:
-                try:
-                    timestamp = parse_timestamp(ts_raw, None)
-                except argparse.ArgumentTypeError:
-                    diagnostics["unparseable_timestamp_lines"] += 1
+            timestamp = parse_timestamp(ts_raw, None) if ts_raw else None
             if timestamp is not None:
                 if response["timestamp"] is None or timestamp < response["timestamp"]:
                     response["timestamp"] = timestamp
@@ -277,6 +271,12 @@ def read_usage(root: Path, start: datetime, end: datetime):
         # line's breakdown meeting another line's flat-only schema; the flat
         # total is authoritative then.
         if flat_write and not sum(cache_creation.values()):
+            cache_creation = {}
+        # Lines of one response that put the same write under different TTLs
+        # merge to a split larger than the flat total; the flat total is the
+        # reconciling value then, priced under the 5-minute assumption.
+        if response["disagrees"] and sum(cache_creation.values()) > flat_write:
+            diagnostics["ttl_split_exceeds_flat_total"] += 1
             cache_creation = {}
         write_1h = cache_creation.get("ephemeral_1h_input_tokens", 0)
         write_5m = cache_creation.get("ephemeral_5m_input_tokens", 0)
