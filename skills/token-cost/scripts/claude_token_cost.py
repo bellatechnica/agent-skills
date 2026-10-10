@@ -152,23 +152,37 @@ def project_name(path: Path, root: Path) -> str:
 def line_usage(usage: dict) -> tuple:
     """One line's usage as a comparable tuple, never mixed with another line's.
 
-    The order is the selection order between lines of one response: the
-    largest output_tokens, then the largest total input side (uncached input
-    plus cache write plus cache read), then the remaining fields, so the
-    chosen line does not depend on file scan order. The last element holds the
-    cache TTL split, which is only meaningful together with its own line.
+    The tuple order is the selection order between lines of one response, so
+    the chosen line does not depend on file scan order:
+    1. the largest total input side (uncached input + cache write + cache
+       read): a response cannot be complete without its prompt, so a
+       placeholder that carries output but zero input loses to the real line;
+    2. the largest output_tokens: lines of one streamed response share the
+       prompt and differ in output, which only grows;
+    3. the remaining counters, then the TTL split, as deterministic
+       tie-breakers. Where two lines with equal counters split a write
+       differently, the larger 5-minute part wins, which prices the write at
+       the lower, default-TTL rate, as a flat total without a split would be.
+    A line that has a TTL split but no flat cache write counter is given
+    the split's sum as its cache write. A split whose parts are all zero
+    against a non-zero flat total is a placeholder and counts as no split.
     """
     input_tokens = int(usage.get("input_tokens", 0) or 0)
-    cache_write = int(usage.get("cache_creation_input_tokens", 0) or 0)
     cache_read = int(usage.get("cache_read_input_tokens", 0) or 0)
     split = usage.get("cache_creation") or {}
+    write_5m = int(split.get("ephemeral_5m_input_tokens", 0) or 0)
+    write_1h = int(split.get("ephemeral_1h_input_tokens", 0) or 0)
+    cache_write = int(usage.get("cache_creation_input_tokens", 0) or 0) or (write_5m + write_1h)
+    has_split = bool(split) and (write_5m + write_1h > 0 or cache_write == 0)
     return (
-        int(usage.get("output_tokens", 0) or 0),
         input_tokens + cache_write + cache_read,
+        int(usage.get("output_tokens", 0) or 0),
         cache_read,
         cache_write,
         input_tokens,
-        tuple(sorted((key, int(value or 0)) for key, value in split.items())),
+        has_split,
+        write_5m,
+        write_1h,
     )
 
 
@@ -232,10 +246,10 @@ def read_usage(root: Path, start: datetime, end: datetime):
                     "disagrees": False,
                 }
             elif chosen != response["usage"]:
-                # The TTL split (last element) can legitimately be present on
-                # one line only; two splits that both exist must agree.
+                # A TTL split can legitimately be present on one line only;
+                # two splits that both exist must agree.
                 kept = response["usage"]
-                if chosen[:-1] != kept[:-1] or (chosen[-1] and kept[-1] and chosen[-1] != kept[-1]):
+                if chosen[:5] != kept[:5] or (chosen[5] and kept[5] and chosen[6:] != kept[6:]):
                     response["disagrees"] = True
                 response["usage"] = max(response["usage"], chosen)
             ts_raw = record.get("timestamp")
@@ -258,17 +272,15 @@ def read_usage(root: Path, start: datetime, end: datetime):
         if response["disagrees"]:
             diagnostics["responses_with_disagreeing_usage_lines"] += 1
 
-        output_tokens, _, cache_read, flat_write, input_tokens, split_items = response["usage"]
-        cache_creation = dict(split_items)
-        write_1h = cache_creation.get("ephemeral_1h_input_tokens", 0)
-        write_5m = cache_creation.get("ephemeral_5m_input_tokens", 0)
-        if cache_creation:
+        _, output_tokens, cache_read, flat_write, input_tokens, has_split, write_5m, write_1h = response["usage"]
+        if has_split:
             if flat_write and (write_1h + write_5m) != flat_write:
                 diagnostics["ttl_split_mismatch"] += 1
         else:
             # Older/foreign records may lack the TTL breakdown; Anthropic's
             # default cache TTL is 5 minutes, so attribute the flat total there.
             write_5m = flat_write
+            write_1h = 0
             diagnostics["ttl_unspecified_assumed_5m"] += 1
 
         events.append(

@@ -132,14 +132,6 @@ class FinalUsagePerResponse(unittest.TestCase):
         _, diagnostics = read(old, self.STREAMED, start=start)
         self.assertEqual(diagnostics["responses_with_disagreeing_usage_lines"], 1)
 
-    def test_a_ttl_subkey_first_seen_on_a_later_line_counts_as_disagreement(self):
-        first = usage(5, write_1h=500)
-        second = usage(5, write_1h=500)
-        second["cache_creation"] = {"ephemeral_1h_input_tokens": 500}
-        first["cache_creation"] = {"ephemeral_5m_input_tokens": 0}
-        _, diagnostics = read([line("msg_a", "text", first), line("msg_a", "tool_use", second)])
-        self.assertEqual(diagnostics.get("responses_with_disagreeing_usage_lines", 0), 1)
-
     def test_identical_lines_with_a_5m_then_1h_breakdown_do_not_disagree(self):
         u = usage(8, write_1h=650)
         u["cache_creation"] = {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 650}
@@ -172,21 +164,13 @@ class FinalUsagePerResponse(unittest.TestCase):
             "output_tokens": 40,
         }
         grown = dict(split, output_tokens=220)
-        for lines in ([unsplit, split], [split, unsplit], [unsplit, grown], [grown, unsplit]):
+        cases = (([unsplit, split], 40), ([split, unsplit], 40), ([unsplit, grown], 220), ([grown, unsplit], 220))
+        for lines, expected_output in cases:
             events, _ = read([line("msg_a", f"b{i}", u) for i, u in enumerate(lines)])
             self.assertEqual(len(events), 1)
             self.assertEqual(events[0]["input_tokens"], 1310)
             self.assertEqual(events[0]["cache_write_5m"], 12898)
-            self.assertEqual(events[0]["output_tokens"], lines[0 if lines[0] is grown else 1]["output_tokens"] if grown in lines else 40)
-
-    def test_sub_counter_disagreement_does_not_depend_on_line_order(self):
-        zero_5m = usage(5)
-        zero_5m["cache_creation"] = {"ephemeral_5m_input_tokens": 0}
-        only_1h = usage(5)
-        only_1h["cache_creation"] = {"ephemeral_1h_input_tokens": 500}
-        for lines in ([zero_5m, only_1h], [only_1h, zero_5m]):
-            _, diagnostics = read([line("msg_a", f"b{i}", u) for i, u in enumerate(lines)])
-            self.assertEqual(diagnostics.get("responses_with_disagreeing_usage_lines", 0), 1)
+            self.assertEqual(events[0]["output_tokens"], expected_output)
 
     def test_flat_only_and_breakdown_lines_do_not_disagree_in_either_order(self):
         flat_only = {
@@ -211,7 +195,48 @@ class FinalUsagePerResponse(unittest.TestCase):
 
         events, diagnostics = read([line("msg_a", "text", no_flat(2)), line("msg_a", "tool_use", no_flat(5))])
         self.assertEqual(events[0]["cache_write_1h"], 500)
-        self.assertNotIn("ttl_split_exceeds_flat_total", diagnostics)
+        self.assertEqual(events[0]["cache_write_5m"], 0)
+
+    def test_placeholder_with_output_but_no_input_loses_to_the_real_line(self):
+        placeholder = {"input_tokens": 0, "output_tokens": 400}
+        real = {"input_tokens": 100, "cache_read_input_tokens": 9000, "output_tokens": 300}
+        for lines in ([placeholder, real], [real, placeholder]):
+            events, _ = read([line("msg_a", f"b{i}", u) for i, u in enumerate(lines)])
+            self.assertEqual(events[0]["input_tokens"], 100)
+            self.assertEqual(events[0]["cache_read_tokens"], 9000)
+
+    def test_all_zero_split_against_a_flat_write_is_priced_from_the_flat_total(self):
+        zero_split = {
+            "input_tokens": 10,
+            "cache_creation_input_tokens": 12898,
+            "output_tokens": 5,
+            "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0},
+        }
+        events, diagnostics = read([line("msg_a", "text", zero_split)])
+        self.assertEqual(events[0]["cache_write_5m"], 12898)
+        self.assertEqual(diagnostics["ttl_unspecified_assumed_5m"], 1)
+        self.assertNotIn("ttl_split_mismatch", diagnostics)
+
+    def test_split_without_a_flat_counter_beats_a_flat_only_line_in_either_order(self):
+        split_only = {
+            "input_tokens": 5,
+            "output_tokens": 9,
+            "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 500},
+        }
+        flat_only = {"input_tokens": 5, "cache_creation_input_tokens": 500, "output_tokens": 9}
+        for lines in ([split_only, flat_only], [flat_only, split_only]):
+            events, _ = read([line("msg_a", f"b{i}", u) for i, u in enumerate(lines)])
+            self.assertEqual(events[0]["cache_write_1h"], 500)
+
+    def test_conflicting_splits_with_equal_counters_resolve_to_the_5m_rate_in_either_order(self):
+        in_5m = usage(9, write_1h=0)
+        in_5m["cache_creation_input_tokens"] = 500
+        in_5m["cache_creation"] = {"ephemeral_5m_input_tokens": 500, "ephemeral_1h_input_tokens": 0}
+        in_1h = usage(9, write_1h=500)
+        for lines in ([in_5m, in_1h], [in_1h, in_5m]):
+            events, diagnostics = read([line("msg_a", f"b{i}", u) for i, u in enumerate(lines)])
+            self.assertEqual((events[0]["cache_write_5m"], events[0]["cache_write_1h"]), (500, 0))
+            self.assertEqual(diagnostics["responses_with_disagreeing_usage_lines"], 1)
 
 
 if __name__ == "__main__":
