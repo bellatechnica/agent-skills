@@ -75,7 +75,7 @@ The script implements the non-obvious safeguards:
 - Use deltas of `total_token_usage`; do not blindly sum `last_token_usage`, because compaction records can omit its component split.
 - Fall back to `last_token_usage` only for the first live sample or a counter reset.
 - Track the current model and turn from `turn_context` events.
-- Normalize Codex's recorded `default` tier to Standard and `priority` tier to Fast. Carry the active tier forward until an explicit change. For a session's initial unmarked state, backfill only when that turn has exactly one explicit tier marker. Keep ambiguous or unfamiliar tiers unpriced rather than guessing.
+- Normalize Codex's recorded `default` tier to Standard and `priority` tier to Fast. Carry the active tier forward until an explicit change. For a session's initial unmarked state, backfill only when that turn has exactly one explicit tier marker. A turn with no tier marker at all is Standard, and the run's diagnostics count those turns. A named tier the script does not recognise stays unpriced rather than guessed.
 - Split rows by model and service tier. A turn that switches modes can appear in both detail rows but counts once in the total.
 - Count unique turns separately from sampling calls.
 - Read every rollout file, including concurrent and resumed sessions; do not select files by modification time.

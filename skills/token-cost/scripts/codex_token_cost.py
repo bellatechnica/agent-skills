@@ -284,11 +284,15 @@ def read_usage(root: Path, start: datetime, end: datetime):
             if not any(delta.values()):
                 continue
             project_key, project_path = project_identity(cwd)
+            if service_tier is None:
+                # A turn with no tier marker anywhere runs on Standard (owner ruling, 2026-10-12: "all
+                # are standard"). A NAMED tier this script does not recognise stays as named and unpriced.
+                diagnostics["unmarked_turns_priced_as_standard"] += 1
             events.append(
                 {
                     "timestamp": timestamp,
                     "model": model or "unknown",
-                    "service_tier": service_tier or "unknown",
+                    "service_tier": service_tier or "standard",
                     "turn_id": turn_id or f"{path}:{line_number}",
                     "project_key": project_key,
                     "project_path": project_path,
