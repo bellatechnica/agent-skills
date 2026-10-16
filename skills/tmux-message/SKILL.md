@@ -326,8 +326,11 @@ The script captures ANSI attributes and joins soft-wrapped terminal rows:
 
 When tmux marks a pane-width Claude Code or Antigravity CLI border as soft
 wrapped into the following prompt row, the script separates that exact
-border-plus-prompt boundary before classification. Other overlong rows remain
-unchanged.
+border-plus-prompt boundary before classification. Blank rows that tmux
+padded to the pane width and joined in front of such a border are separated
+too, but only when the border-plus-prompt boundary follows them; captures of
+Claude Code 2.1.280 on 2026-10-16 showed one such row above the composer.
+Other overlong rows remain unchanged.
 
 It recognizes only anchored Claude Code, Codex, Antigravity CLI, OpenCode, and
 Cursor CLI composer regions. The Antigravity CLI 1.1.27 and OpenCode 1.18.31

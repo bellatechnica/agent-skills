@@ -270,23 +270,37 @@ def _raw_offset_after_visible_chars(raw: str, count: int) -> int | None:
     return None
 
 
+def _split_joined_border(raw_line: str, pane_width: int | None) -> list[str]:
+    if pane_width is None or pane_width <= 0:
+        return [raw_line]
+    visible = _visible(raw_line)
+    # tmux -J pads a soft-wrapped blank row to the pane width, so the blank
+    # row Claude Code 2.1.280 draws above its composer can arrive joined in
+    # front of the border (observed 2026-10-16). Blank rows are split off only
+    # when the border-plus-prompt boundary follows them.
+    border_start = 0
+    while visible[border_start : border_start + pane_width] == " " * pane_width:
+        border_start += pane_width
+    border = visible[border_start : border_start + pane_width]
+    joined_prompt = visible[border_start + pane_width :]
+    if not (set(border) <= {"─", "━"} and joined_prompt.startswith(("❯", ">"))):
+        return [raw_line]
+    offsets = [
+        _raw_offset_after_visible_chars(raw_line, count)
+        for count in range(pane_width, border_start + 2 * pane_width, pane_width)
+    ]
+    if None in offsets:
+        return [raw_line]
+    starts = [0, *offsets]
+    ends = [*offsets, len(raw_line)]
+    return [raw_line[start:end] for start, end in zip(starts, ends)]
+
+
 def _capture_lines(raw: str, pane_width: int | None) -> list[str]:
-    """Undo tmux -J joining a full-width client border to its prompt row."""
+    """Undo tmux -J joining blank rows and a full-width border to a prompt."""
     lines: list[str] = []
     for raw_line in raw.splitlines():
-        visible = _visible(raw_line)
-        if pane_width is not None and pane_width > 0 and len(visible) > pane_width:
-            border = visible[:pane_width]
-            joined_prompt = visible[pane_width:]
-            if (
-                set(border) <= {"─", "━"}
-                and joined_prompt.startswith(("❯", ">"))
-            ):
-                split_at = _raw_offset_after_visible_chars(raw_line, pane_width)
-                if split_at is not None:
-                    lines.extend((raw_line[:split_at], raw_line[split_at:]))
-                    continue
-        lines.append(raw_line)
+        lines.extend(_split_joined_border(raw_line, pane_width))
     return lines
 
 
