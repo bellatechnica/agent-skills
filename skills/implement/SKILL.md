@@ -182,7 +182,9 @@ reports the mode it chose and the result of its plan check and
 sign-off. Do not merge or publish without an
 authorization that originates with the user, given directly or
 relayed (including a coordinator's standing grant), as `handoff`
-describes.
+describes. Once the branch lands, whether in this turn or after a
+later merge authorization, continue with §6 before reporting the work
+finished.
 
 ## 6. After landing
 
@@ -195,9 +197,10 @@ the user has said work continues on it:
 - **Built by a handed-off session**: that session cleans up its own
   worktree and branch, as `handoff` §5 tells it to. This session then
   closes the window it spawned, once the branch has landed, its
-  worktree is gone, and the copy of its recap has arrived here —
-  checked against the trunk and `git worktree list`, not against the
-  session's own summary.
+  worktree and branch are both gone, and the copy of its recap has
+  arrived here — checked against the trunk, `git worktree list` and
+  `git branch --list <branch>`, not against the session's own
+  summary.
 - **Under a coordinator**: each implementing session cleans up as
   `handoff` §5 tells it to; the coordinator verifies that cleanup and
   closes windows as its own skill says.
