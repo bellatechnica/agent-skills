@@ -181,14 +181,17 @@ implementing session sends that recap for its own change; this session
 reports the mode it chose and the result of its plan check and
 sign-off. Do not merge or publish without an
 authorization that originates with the user, given directly or
-relayed (including a coordinator relaying the user's merge permission), as `handoff`
+relayed (including a coordinator authorizing a draft PR under the user's
+assignment of the workstream, or relaying the user's merge
+permission), as `handoff`
 describes. Once the branch lands, whether in this turn or after a
 later merge authorization, continue with §6 before reporting the work
 finished.
 
 ## 6. After landing
 
-Once a branch has landed (it is an ancestor of the trunk), and unless
+Once a branch has landed (it is an ancestor of the trunk, or its PR
+shows merged after a squash or rebase merge), and unless
 the user has said work continues on it:
 
 - **Built by this session or a subagent**: this session cleans up as

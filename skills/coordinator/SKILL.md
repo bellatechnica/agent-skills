@@ -8,12 +8,9 @@ description: Run this session as the standing coordinator of a multi-session wor
 The coordinator holds the decision history and the design contract;
 implementing sessions hold the implementation. The job is to keep the
 implementation stuck to the approved design — author, dispatch, review,
-authorize, rule, record. Four habits apply here at double strength,
-because every claim arrives second-hand: state the expected numbers
-before any run or check; follow a green suite with a small live smoke
-whose pass numbers were stated in advance; never let a status claim
-what nobody observed; and diagnose the mechanism before ruling on a
-fix.
+authorize, rule, record. Follow the global and repository agent
+instructions (CLAUDE.md, AGENTS.md or their equivalent) at double
+strength here, because every claim arrives second-hand.
 
 ## Ownership boundary
 
@@ -103,9 +100,12 @@ list of other people's mistakes.
 
 Per work item: own session (fresh context), own worktree, own scratch
 databases, a handoff that carries SPEC POINTERS (the design and the
-execution plan, wherever they are tracked, are the contract; the handoff holds only the breakdown), the known
-traps by name, and the reporting channel. See the `handoff` skill for
-mechanics. Coordinator-specific rules:
+execution plan, wherever they are tracked, are the contract; the
+handoff holds only the breakdown), the known traps by name, and the
+reporting channel. See the `handoff` skill for mechanics. The handoff
+prompt states the coordinator's continuing role: the session sends its
+tips to the coordinator for phase review as `review-loop` describes,
+and publishes or merges only on the coordinator's authorization. Coordinator-specific rules:
 
 - **Handoffs carry traps for recovery speed, not just prevention.** A
   trap named verbatim in the handoff may still fire; its value is

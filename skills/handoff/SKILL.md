@@ -354,7 +354,8 @@ Otherwise a session's leftovers outlive it: a stale worktree, a merged
 branch, and scratch databases nobody can attribute months later.
 
 After the merge is confirmed landed (the branch is an ancestor of the
-trunk — not merely "the merger accepted"):
+trunk, or, after a squash or rebase merge, its PR shows merged — not
+merely "the merger accepted"):
 
 - **Remove the worktree**, run from the repo root, never from inside the
   worktree being removed: `git -C <repo root> worktree remove <path>`,
@@ -364,7 +365,9 @@ trunk — not merely "the merger accepted"):
 - **Delete the branch** with `git -C <repo root> branch -d <branch>` —
   lowercase `-d`, which refuses when commits are unmerged and is
   therefore the safety check, not a formality. If it refuses,
-  something did not land: investigate, never reach for `-D`.
+  something did not land: investigate, never reach for `-D` — except
+  after a squash or rebase merge, which `-d` cannot see: confirm the
+  merged PR's head is this branch's tip, then use `-D`.
 - **Drop the scratch databases and fixtures the branch created.** Test
   databases are often per-checkout and per-day, so one worktree can
   leave several; list them by the naming scheme before dropping, and
