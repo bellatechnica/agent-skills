@@ -1,6 +1,6 @@
 ---
 name: plan-upfront
-description: Plan a task before implementation - explore, surface the requirements upfront (with enumeration artifacts for subsystems whose promises span time or failures), ask few but sufficient question rounds, then save the approved plan or design where the repository keeps such documents (plans/YYYY-MM-DD-<slug>.md when it has no convention). Use when the user wants a written plan before any implementation.
+description: Plan a task before implementation - explore, surface the requirements upfront (with enumeration artifacts for subsystems whose promises span time or failures), ask few but sufficient question rounds, then save the approved plan where the repository keeps plans (a design in the do_not_commit area, with the user asked where to publish it). Use when the user wants a written plan before any implementation.
 argument-hint: <task to plan>
 ---
 
@@ -122,16 +122,26 @@ them — the approved version is the plan.
 Immediately after approval:
 
 1. Write the final approved plan (including any revisions and edits
-   from the approval step) where the repository keeps documents of
-   its kind — its design-docs location when the user or the calling
-   skill calls the document a design, its plans location otherwise —
-   following its naming convention. Where it
-   has none, use `plans/YYYY-MM-DD-<slug>.md` at the main checkout's
-   root. Never save inside a worktree: other sessions cannot read it
-   there, and it is deleted with the worktree. Create the directory if
-   needed.
-   Never overwrite an existing plan file — if the name collides, add a
-   `-2` style suffix.
-2. Tell the user where the plan was saved, then **stop**. Do not begin
+   from the approval step) to its file. Never save inside a worktree:
+   other sessions cannot read it there, and it is deleted with the
+   worktree.
+   - **A design** — when the user or the calling skill calls the
+     document one — goes to the main checkout's `do_not_commit/` area,
+     following that area's folder convention, named
+     `YYYY-MM-DD-<slug>.md`.
+   - **A plan** goes where the repository keeps plans, following its
+     naming convention; where it has none, to `plans/YYYY-MM-DD-<slug>.md`
+     at the main checkout's root.
+
+   Create the directory if needed. Never overwrite an existing file —
+   if the name collides, add a `-2` style suffix.
+2. For a design, ask the user where it should live beyond that local
+   copy: in a repository where changes land by local merge, whether to
+   commit it to the repo's design-docs location; in a pull-request
+   repository, whether to publish it to a document tool they use
+   (Google Docs, Notion, or similar). Write the answer — including
+   "stays local" — at the top of the file, so every later amendment
+   goes the same way.
+3. Tell the user where the plan was saved, then **stop**. Do not begin
    implementing unless the user explicitly asks. When they do, the
    `implement` skill takes it from there.
