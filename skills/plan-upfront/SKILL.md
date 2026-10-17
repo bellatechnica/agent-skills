@@ -139,9 +139,11 @@ Immediately after approval:
    copy: in a repository where changes land by local merge, whether to
    commit it to the repo's design-docs location; in a pull-request
    repository, whether to publish it to a document tool they use
-   (Google Docs, Notion, or similar). Write the answer — including
-   "stays local" — at the top of the file, so every later amendment
-   goes the same way.
+   (Google Docs, Notion, or similar). If they choose to commit it,
+   move the file (do not copy it) to that location so only one version
+   exists. Otherwise write the answer — a document-tool link, or
+   "stays local" — at the top of the local file, so every later
+   amendment goes the same way.
 3. Tell the user where the plan was saved, then **stop**. Do not begin
    implementing unless the user explicitly asks. When they do, the
    `implement` skill takes it from there.
