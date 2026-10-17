@@ -17,8 +17,10 @@ briefing than on building.
   design document, an issue, or a plan agreed in this conversation.
   Refer to it by path from here on. A plan that will be read outside
   this session — by a subagent, another session, or a reviewer — must
-  be a file in the main checkout (committed or not) or in committed
-  history; a file inside a worktree is off limits to other sessions. A
+  be a file in the main checkout (committed or not), in committed
+  history, or a design `plan-upfront` published to a document tool,
+  cited by its link; a file inside a worktree is off limits to other
+  sessions. A
   plan that lives only in this conversation is written to the main
   checkout's uncommitted area (its `do_not_commit/`); a plan file
   inside a worktree is moved, not copied, to the same relative path in
