@@ -96,9 +96,10 @@ Who does what depends on the mode:
 
 Rules that hold in every mode:
 
-- **Every build happens in a worktree of its own**, created by
-  whoever builds — this session, a subagent, or another session —
-  before the first edit; `handoff`'s sizing section has the rules,
+- **Every build happens in a worktree of its own**, created before
+  the first edit by whoever builds — or, for a subagent, by this
+  session for that subagent alone; `handoff`'s sizing section has the
+  rules,
   including which commit to base it on. Never build in the repo root,
   in a worktree someone else is building in, or in another live
   session's worktree. Other sessions may land on the branch this
@@ -137,8 +138,9 @@ Per mode:
     questions, checks the first ready branch against the plan, signs
     off on the final one, and closes the new session's window once
     its branch has landed (§6). Ask the new session to send its first
-    ready branch here before starting `review-loop`, and the final
-    branch when the loop ends. Without this assignment `handoff`'s
+    ready branch here before starting `review-loop`, the final
+    branch when the loop ends, and, after its branch has landed and
+    its cleanup is done, a copy of the recap it gave the user. Without this assignment `handoff`'s
     default applies and this session would stay out.
   - The new session owns everything else: running `review-loop` on its
     own change, the merge, and its recap to the user.
@@ -191,12 +193,13 @@ the user has said work continues on it:
   worktree and deletes the branch as `handoff` §5 describes.
 - **Built by a handed-off session**: that session cleans up its own
   worktree and branch, as `handoff` §5 tells it to. This session then
-  closes the window it spawned, once the branch has landed, the
-  session's recap has reached the user, and its worktree is gone —
-  checked against those artifacts, not against the session's own
-  summary.
-- **Under a coordinator**: the coordinator cleans up and closes
-  windows as its own skill says.
+  closes the window it spawned, once the branch has landed, its
+  worktree is gone, and the copy of its recap has arrived here —
+  checked against the trunk and `git worktree list`, not against the
+  session's own summary.
+- **Under a coordinator**: each implementing session cleans up as
+  `handoff` §5 tells it to; the coordinator verifies that cleanup and
+  closes windows as its own skill says.
 
 Then tell the user what was removed, what was closed, and what was
 kept.
