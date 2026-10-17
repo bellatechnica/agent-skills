@@ -24,6 +24,7 @@
 /skills/*
 
 !/skills/codex-migrate-session/
+!/skills/coordinator/
 !/skills/handoff/
 !/skills/history-audit/
 !/skills/implement/

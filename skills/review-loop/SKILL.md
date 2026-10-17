@@ -156,5 +156,5 @@ commit IDs; what was fixed; what was declined, deferred, or escalated,
 each with its one-line reason; and residual risk — what no reviewer
 examined. Close any persistent reviewer session as `review-session`
 directs. Do not merge or publish without an authorization that
-originates with the user, given directly or relayed (including a
-coordinator's standing grant), as `handoff` describes.
+originates with the user, given directly or relayed (including a coordinator relaying the user's merge
+permission), as `handoff` describes.

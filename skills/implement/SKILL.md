@@ -55,7 +55,7 @@ Then take the cheapest mode that fits. These are defaults, not rules.
 | **This session** | Small or medium; context here matters; the user is steering here; room is left in context. |
 | **Subagent** | A bounded, self-contained piece that needs no steering from the user; or keeping this session's context free for review or coordination. Fork when this session's context matters; a fresh agent with a full brief when it does not. Several in parallel only when their files do not overlap. A subagent reports to this session, not the user, and cannot stop to ask the user. |
 | **Handoff** (`handoff` skill) | Long — hours or many commits; the user will steer it directly in its own session; it must outlive this session; or a different CLI, model, or sandbox is wanted. |
-| **Several sessions** | The plan splits into streams that can run in parallel. Use the `coordinator` skill, where installed, when the streams have ordering dependencies, phase gates, shared live resources, or a design someone must hold them to. Use plain parallel handoffs only when the streams are genuinely independent. |
+| **Several sessions** | The plan splits into streams that can run in parallel. Use the `coordinator` skill when the streams have ordering dependencies, phase gates, shared live resources, or a design someone must hold them to. Use plain parallel handoffs only when the streams are genuinely independent. |
 | **Something else** | A step only the user can do (a login, a hardware action); a multi-agent workflow the user has explicitly opted into; a scheduled or cloud agent for work that must run later or elsewhere. Or no mode at all: the plan is not ready, and the right move is back to `plan-upfront`. |
 
 When this session and a handoff both fit, prefer this session if the
@@ -181,7 +181,7 @@ implementing session sends that recap for its own change; this session
 reports the mode it chose and the result of its plan check and
 sign-off. Do not merge or publish without an
 authorization that originates with the user, given directly or
-relayed (including a coordinator's standing grant), as `handoff`
+relayed (including a coordinator relaying the user's merge permission), as `handoff`
 describes. Once the branch lands, whether in this turn or after a
 later merge authorization, continue with §6 before reporting the work
 finished.

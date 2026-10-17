@@ -10,6 +10,10 @@ on it.
 
 **Coordinating parallel agent sessions**
 
+- `coordinator` — run one session as the coordinator of a workstream that
+  several implementing sessions build: it writes the execution plan, hands
+  out the work, reviews each phase against the design, and authorizes draft
+  PRs (or merges, when allowed).
 - `handoff` — hand a work item to a new agent session. It writes a prompt or
   handoff doc, launches the session, and keeps a durable channel to it.
 - `review-session` — keep an independent reviewer in a separate agent session
