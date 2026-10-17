@@ -30,10 +30,16 @@ on it.
 - `history-audit` — sweep a repository's whole history for those things and
   price a history rewrite honestly before recommending one.
 
-**Planning**
+**Planning and building**
 
 - `plan-upfront` — explore the task, surface the requirements, ask a few
   rounds of questions, and save the approved plan before writing code.
+- `implement` — build an approved plan, first choosing whether to do it in
+  the current session, a subagent, a handed-off session or several sessions,
+  then pass the result to `review-loop`.
+- `review-loop` — iterate on a finished change with a reviewer until it is
+  good enough for the cost of a mistake in it, choosing how strict to be
+  (one pass, no real defects, or fully clean) and who reviews.
 
 **Agent CLI housekeeping**
 

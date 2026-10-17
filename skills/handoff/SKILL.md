@@ -245,7 +245,8 @@ or think to ask about, and let the reply channel handle the rest.
   don't rely on the session reading the doc carefully enough.
   Unconstrained handoffs omit this.
 - Tell the session how to involve the user:
-  - **Larger features** (or whenever the user asked for a plan): refine
+  - **Larger features** (or whenever the user asked for a plan), unless
+    the handoff already carries a plan the user approved: refine
     the plan first and present it to the USER for review before
     implementing — do not start building on the handoff doc alone. Tell
     the session to run the `plan-upfront` skill for this.
@@ -304,9 +305,11 @@ merge flow itself when a user-originated authorization arrives —
 directly from the user, or relayed by another session passing the
 user's instruction on (multi-hop and conditional relays count: e.g.
 "review, then ask it to merge if good"). A session's own initiative
-never authorizes a merge; the chain must start at the user. The spawning session does
-not shepherd, batch, or relay other sessions' merges, and does not act
-as a standing manager or message hub for them. Coordinate only when
+never authorizes a merge; the chain must start at the user. By default the spawning session
+does not shepherd, batch, or relay other sessions' merges, and does not
+act as a standing manager or message hub for them — unless the handoff
+itself assigns it a continuing role, which the prompt then states.
+Otherwise coordinate only when
 absolutely necessary: a shared-resource condition from the handoff
 doc's Coordination section (GPU, live DB, services), or a direct conflict
 between sessions. When a spawned session reports READY, relay that to

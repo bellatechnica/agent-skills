@@ -26,9 +26,11 @@
 !/skills/codex-migrate-session/
 !/skills/handoff/
 !/skills/history-audit/
+!/skills/implement/
 !/skills/init-repo/
 !/skills/never-commit/
 !/skills/plan-upfront/
+!/skills/review-loop/
 !/skills/review-session/
 !/skills/session-message/
 !/skills/tmux-message/

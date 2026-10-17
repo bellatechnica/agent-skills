@@ -128,4 +128,5 @@ Immediately after approval:
    Never overwrite an existing plan file — if the name collides, add a
    `-2` style suffix.
 2. Tell the user where the plan was saved, then **stop**. Do not begin
-   implementing unless the user explicitly asks.
+   implementing unless the user explicitly asks. When they do, the
+   `implement` skill takes it from there.
