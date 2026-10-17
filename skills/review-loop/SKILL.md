@@ -23,8 +23,9 @@ read-only and never fixes anything.
   the branch it will land on, not its own upstream) and the tip. Each
   branch gets its own loop; several branches built in parallel are
   several loops.
-- Gather what the reviewer is measured against: the plan or design
-  path, the user's review criteria, and the decisions a reviewer would
+- Gather what the reviewer is measured against: the plan and the
+  design it implements, by path or published link, the user's review
+  criteria, and the decisions a reviewer would
   otherwise re-litigate (rejected alternatives, deliberate trade-offs).
 - **The design session.** Where the change implements a plan held by
   a session other than the owner, that design session checks the
@@ -88,7 +89,7 @@ author for this purpose, since it planned and directed the build.
 | Reviewer | Fits when | Watch for |
 | --- | --- | --- |
 | **Review subagent** — `/code-review` in Claude Code (local levels only; never `--fix` or `--comment`), or the harness's equivalent from `review-session`'s reviewer-routing table | The default: fresh eyes, cheap, no setup. Raise the effort level with the stop level. | It starts from nothing each round, so it does not know the plan or why things were decided. `/code-review` hunts bugs in a diff; where the defects that matter are elsewhere — conformance to a plan, ambiguous instructions in prose, contradictions between documents — brief a general-purpose subagent instead, or as well, with the plan path, the pinned IDs, what to look for, and the read-only rule. |
-| **Persistent reviewer** (`review-session` skill) | Many rounds are expected; the change is large enough that rebuilding context every round is the main cost; the subagent's findings keep failing for lack of context (re-raising settled decisions, misreading the design); a reviewer from another model family is wanted, since it catches different defects; or the user wants to watch the reviewer. | Setup cost, and a session to close afterwards. `review-session` runs the rounds and the close-out; pass it the stop level from §1, and put the plan path and any prose, plan-conformance, or cross-document concerns into its review criteria — its reviewer reads only committed design documents on its own. Its reviewer runs a review skill, which hunts code bugs; for a prose-only change, prefer a briefed subagent. |
+| **Persistent reviewer** (`review-session` skill) | Many rounds are expected; the change is large enough that rebuilding context every round is the main cost; the subagent's findings keep failing for lack of context (re-raising settled decisions, misreading the design); a reviewer from another model family is wanted, since it catches different defects; or the user wants to watch the reviewer. | Setup cost, and a session to close afterwards. `review-session` runs the rounds and the close-out; pass it the stop level from §1, and put the plan and design paths (or published links) and any prose, plan-conformance, or cross-document concerns into its review criteria — its reviewer reads only committed design documents on its own, and a design kept in the do_not_commit area or published elsewhere is not one. Its reviewer runs a review skill, which hunts code bugs; for a prose-only change, prefer a briefed subagent. |
 | **Something else** | Security-sensitive code: add `/security-review` in Claude Code. A workstream under a coordinator: its phase review comes on top of this loop. Product or UX judgement no tool can make: ask the user to review that part. A deep multi-agent cloud review (`/code-review ultra`) is user-triggered and billed — suggest it, never launch it. | These add to an independent reviewer; none replaces one. One exception: at the one-pass level, when a handed-off or separate session wrote the code, the design session's plan check may be the single pass. |
 
 Switch reviewers when the rounds say to: after two rounds where most
