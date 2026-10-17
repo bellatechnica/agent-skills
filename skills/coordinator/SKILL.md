@@ -131,7 +131,10 @@ and publishes or merges only on the coordinator's authorization. Coordinator-spe
     when clean" or similar) does a clean phase review authorize the
     merge: submitted to the repo's merger session where one exists;
     otherwise the implementing session rebases onto the trunk, runs the
-    full suite once, and fast-forwards the trunk (`--ff-only`) itself. Cite the user's
+    full suite once, and fast-forwards the trunk (`--ff-only`) itself.
+    Where the trunk lives on a remote, the fast-forward must reach it —
+    by pushing the trunk, or by merging the PR without a merge commit —
+    before anything counts the branch as landed. Cite the user's
     instruction verbatim when authorizing.
   - In a repository without pull requests, a clean phase review
     without merge permission leaves the branch reported ready to the
@@ -148,7 +151,10 @@ and publishes or merges only on the coordinator's authorization. Coordinator-spe
   a major conflict appears, or when something it depends on changed.
   When the earlier phase landed by squash or rebase merge, it moves
   only its own commits: `git rebase --onto <trunk> <earlier phase's
-  old branch tip>`.
+  old branch tip>`. A phase built on an earlier phase's unlanded
+  branch opens its draft PR against that branch, not the trunk, and
+  retargets it to the trunk only after rebasing once the earlier phase
+  has merged.
 
 ## 3. Review
 
