@@ -114,6 +114,12 @@ Rules that hold in every mode:
   implements it.
 - **Run targeted tests while iterating**; the full suite belongs to
   the merge gate.
+- **Clean up after landing.** Once a branch has landed (it is an
+  ancestor of the trunk), the owner of the change removes its worktree
+  and deletes its branch as `handoff` §5 describes — including a
+  worktree a subagent built — unless the user has said work continues
+  on that branch. The §5 report says what was removed and what was
+  kept.
 
 Per mode:
 
@@ -149,7 +155,9 @@ not what was reported:
 
 - `git status` and `git log` in the implementing worktree: the tree is
   clean, the commits exist, and the branch is the one the implementer
-  reported, starting from the base the brief named.
+  reported (in this-session mode, the one this session created),
+  starting from the base the brief named (in this-session mode, the
+  base this session chose).
 - The diff covers every plan item assigned to this branch (the whole
   plan, unless a stream or piece brief narrowed it) and nothing outside
   that assignment; any departure is justified in a commit message or
