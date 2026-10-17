@@ -148,7 +148,8 @@ Before `review-loop`, the owner of the change checks what was built,
 not what was reported:
 
 - `git status` and `git log` in the implementing worktree: the tree is
-  clean, the commits exist, the branch is the one named.
+  clean, the commits exist, and the branch is the one the implementer
+  reported, starting from the base the brief named.
 - The diff covers every plan item assigned to this branch (the whole
   plan, unless a stream or piece brief narrowed it) and nothing outside
   that assignment; any departure is justified in a commit message or
