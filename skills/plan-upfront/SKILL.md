@@ -143,9 +143,12 @@ Immediately after approval:
    move the file (do not copy it) to that location on a branch of its
    own, in a worktree of its own, so only one version exists, and land
    it through the repository's usual merge flow — the user's choice to
-   commit it is the authorization. Later amendments land the same way. Otherwise write the answer — a document-tool link, or
-   "stays local" — at the top of the local file, so every later
-   amendment goes the same way.
+   commit it is the authorization. Later amendments land the same way.
+   If they choose a document tool, publish it there, write the link at
+   the top of the local file, and treat the published document as the
+   design from then on: amendments go there, and the local file keeps
+   only the link. If it stays local, write "stays local" at the top of
+   the file.
 3. Tell the user where the plan was saved, then **stop**. Do not begin
    implementing unless the user explicitly asks. When they do, the
    `implement` skill takes it from there.
