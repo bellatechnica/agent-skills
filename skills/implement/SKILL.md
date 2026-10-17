@@ -96,12 +96,13 @@ Who does what depends on the mode:
 
 Rules that hold in every mode:
 
-- **Edits by a subagent or another session happen in a worktree of
-  their own**, never in the repo root or in another session's
-  worktree; `handoff`'s sizing section has the rules. This session
-  edits where it already works unless another session shares that
-  checkout; fixes to a branch a subagent built are made in that
-  branch's worktree, as `review-loop` says.
+- **Every build happens in a worktree of its own** — this session's,
+  a subagent's, or another session's — created before the first edit,
+  never in the repo root or in another session's worktree; `handoff`'s
+  sizing section has the rules. Other sessions may land on the branch
+  this session sits on at any moment, and a commit made there races
+  them. Fixes during review are made in the worktree of the branch
+  under review, as `review-loop` says.
 - **Nothing writes to a live system** — a production database, a
   deployed service, a published release — until `review-loop` has met
   its level on the code that does the writing.
@@ -116,7 +117,8 @@ Rules that hold in every mode:
 
 Per mode:
 
-- **This session**: implement, commit, then §4.
+- **This session**: create its own worktree, implement there, commit,
+  then §4.
 - **Subagent**: brief it with the plan path, the worktree or branch,
   what is in and out of scope, the verification list, and what to
   return (branch, commits, checks run with their numbers, anything
