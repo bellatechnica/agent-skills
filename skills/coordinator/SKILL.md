@@ -145,6 +145,9 @@ and publishes or merges only on the coordinator's authorization. Coordinator-spe
   it cannot build without that phase's unlanded commits (`handoff`
   §0). It rebases only when an earlier phase it needs has merged, when
   a major conflict appears, or when something it depends on changed.
+  When the earlier phase landed by squash or rebase merge, it moves
+  only its own commits: `git rebase --onto <trunk> <earlier phase's
+  old branch tip>`.
 
 ## 3. Review
 

@@ -75,6 +75,9 @@ cheap side of each:
   - name the BRANCH to base on, never the directory;
   - write the coupling into the handoff doc: the child rebases onto the
     trunk once the parent lands, and must not merge before the parent.
+    When the parent lands by squash or rebase merge, the child moves
+    only its own commits: `git rebase --onto <trunk> <parent's old
+    branch tip>`.
 
 Everything below applies to whichever pieces you chose.
 
@@ -107,11 +110,14 @@ more than it returns — the receiver pauses and asks when it hits a
 real gap (section 2). Carry what the receiver could not reconstruct
 or think to ask about, and let the reply channel handle the rest.
 
-- **Spec pointers, not spec**: the committed docs are the spec; list
-  exactly which files/sections. The handoff doc holds the breakdown.
-- **Name the committed design documents the work touches — required,
-  every handoff.** List the relevant files under the repo's designs
-  area or state that none apply, and name them as candidates to rule
+- **Spec pointers, not spec**: the design and plan documents are the
+  spec — committed files, files in the main checkout's `do_not_commit`
+  area, or a published document cited by its link; list exactly which
+  files/sections. The handoff doc holds the breakdown.
+- **Name the design documents the work touches — required, every
+  handoff.** List the relevant ones — under the repo's designs area, in
+  the main checkout's `do_not_commit` area, or published and cited by
+  link — or state that none apply, and name them as candidates to rule
   in or out, not assertions ("plausibly relevant, not checked" is
   honest and useful). The expensive failure this prevents: a receiver
   recommending something a design forbids in as many words, undetected
