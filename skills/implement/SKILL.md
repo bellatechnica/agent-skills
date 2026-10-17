@@ -127,7 +127,7 @@ Per mode:
 - **Subagent**: brief it with the plan path, the branch to base its
   own new worktree on (or a worktree created for it alone — never this
   session's own worktree), what is in and out of scope, the verification list, and what to
-  return (branch, commits, checks run with their numbers, anything
+  return (its worktree path, branch, commits, checks run with their numbers, anything
   skipped). Review is §4's job, not the subagent's.
 - **Handoff**: follow `handoff`, and write these into the prompt:
   - The plan is approved: read the plan file and build it yourself, in
@@ -189,8 +189,9 @@ describes.
 Once a branch has landed (it is an ancestor of the trunk), and unless
 the user has said work continues on it:
 
-- **Built by this session or a subagent**: this session removes the
-  worktree and deletes the branch as `handoff` §5 describes.
+- **Built by this session or a subagent**: this session cleans up as
+  `handoff` §5 describes: it removes the worktree, deletes the branch,
+  and drops the scratch databases and fixtures the build created.
 - **Built by a handed-off session**: that session cleans up its own
   worktree and branch, as `handoff` §5 tells it to. This session then
   closes the window it spawned, once the branch has landed, its
