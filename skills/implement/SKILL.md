@@ -119,8 +119,9 @@ Per mode:
 
 - **This session**: create its own worktree, implement there, commit,
   then §4.
-- **Subagent**: brief it with the plan path, the worktree or branch,
-  what is in and out of scope, the verification list, and what to
+- **Subagent**: brief it with the plan path, the branch to base its
+  own new worktree on (or a worktree created for it alone — never this
+  session's own worktree), what is in and out of scope, the verification list, and what to
   return (branch, commits, checks run with their numbers, anything
   skipped). Review is §4's job, not the subagent's.
 - **Handoff**: follow `handoff`, and write these into the prompt:
