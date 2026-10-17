@@ -34,43 +34,30 @@ def claude_capture(first: str = "", *continuations: str) -> str:
     return "\n".join(rows) + "\n"
 
 
-def claude_joined_border_capture(first: str = "") -> str:
-    return "\n".join(
-        [f"{STYLED_BORDER}❯\u00a0{first}", BORDER, "  ⏵⏵ auto mode on"]
-    ) + "\n"
-
-
 CAPTURED_WIDTH = 80
 CAPTURED_BORDER = "─" * CAPTURED_WIDTH
 
 
-def claude_blank_row_joined_capture(first: str = "", *, busy: bool = False) -> str:
-    """Claude Code 2.1.280 composer rows under capture-pane -e -J (2026-10-16).
+def claude_captured_rows(first: str = "", *, busy: bool = False) -> str:
+    """Claude Code 2.1.280 composer rows under capture-pane -e (2026-10-16).
 
-    The blank row above the top border is soft wrapped, so tmux pads it to the
-    pane width and joins it, the border, and the prompt row into one line.
+    Each pane row is its own line. tmux restates the colour at the start of a
+    row that follows an unwrapped row, and after a soft-wrapped row (the
+    border) emits only the change from the carried state.
     """
     grey = "\x1b[38;2;102;102;102m"
     rule = "\x1b[38;2;153;153;153m"
-    status = "\x1b[38;2;171;43;63m⏵⏵ bypass permissions on "
+    status = "\x1b[39m  \x1b[38;2;171;43;63m⏵⏵ bypass permissions on "
     if busy:
-        return "\n".join(
-            [
-                f"{grey}  ⎿ \u00a0Tip: Use /clear to start fresh",
-                f"\x1b[39m{' ' * CAPTURED_WIDTH}{rule}{CAPTURED_BORDER}"
-                f"{grey}❯\u00a0{first}\x1b[7m\x1b[39m ",
-                f"\x1b[0m{rule}{CAPTURED_BORDER}\x1b[39m  {status}{grey}"
-                "(shift+tab to cycle) · esc to interrupt · ← for ag…",
-            ]
-        ) + "\n"
+        prompt = f"{grey}❯\u00a0{first}\x1b[7m\x1b[39m \x1b[0m"
+        footer = f"{status}{grey}(shift+tab to cycle) · esc to interrupt · ← for ag…\x1b[39m"
+        above = ""
+    else:
+        prompt = f"\x1b[39m❯\u00a0{first}\x1b[7m \x1b[0m"
+        footer = f"{status}{grey}(shift+tab to cycle) · ← for agents\x1b[39m"
+        above = f"{' ' * 57}{grey}7% until auto-compact\x1b[39m"
     return "\n".join(
-        [
-            f"{grey}✻\x1b[39m {grey}Crunched for 1m 6s · done 4:14 AM\x1b[39m",
-            f"{' ' * CAPTURED_WIDTH}{rule}{CAPTURED_BORDER}"
-            f"\x1b[39m❯\u00a0{first}\x1b[7m \x1b[0m{' ' * 45}",
-            f"{rule}{CAPTURED_BORDER}\x1b[39m  {status}{grey}"
-            f"(shift+tab to cycle) · ← for agents\x1b[39m{' ' * 16}",
-        ]
+        [above, f"{rule}{CAPTURED_BORDER}", prompt, f"{rule}{CAPTURED_BORDER}", footer]
     ) + "\n"
 
 
@@ -153,16 +140,6 @@ def agy_capture(first: str = "", *continuations: str) -> str:
     return "\n".join(rows) + "\n"
 
 
-def agy_joined_border_capture(first: str = "") -> str:
-    footer = "  ? for shortcuts".ljust(22) + "Gemini 3.8 Flash · high"
-    return "\n".join(
-        [
-            f"{STYLED_BORDER}>" if not first else f"{STYLED_BORDER}> {first}",
-            BORDER,
-            footer,
-        ]
-    ) + "\n"
-
 
 def opencode_capture(
     first: str = "",
@@ -205,7 +182,10 @@ def cursor_capture(
     above: tuple[str, ...] = (),
     below: tuple[str, ...] = (),
 ) -> str:
-    """Rows as the Cursor CLI 2026.10.01 draws them under capture-pane -e -J."""
+    """Rows as the Cursor CLI 2026.10.01 draws them under capture-pane -e -J.
+
+    None of the recorded rows was joined, so they also match -e alone.
+    """
     bg = CURSOR_HOST_BACKGROUND
     if first is None:
         prompt = (
@@ -402,76 +382,42 @@ class ClassifyCaptureTests(unittest.TestCase):
     def test_claude_bare_prompt_is_clear(self) -> None:
         self.assertEqual(tmux_send.classify_capture(claude_capture(), WIDTH), "CLEAR")
 
-    def test_claude_prompt_joined_to_full_width_border_is_clear(self) -> None:
-        capture = claude_joined_border_capture()
-        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "CLEAR")
-
-    def test_claude_draft_joined_to_full_width_border_is_occupied(self) -> None:
-        capture = claude_joined_border_capture("queued message")
-        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "OCCUPIED")
-
-    def test_claude_blank_row_joined_before_border_splits_into_rows(self) -> None:
-        lines = tmux_send._capture_lines(
-            claude_blank_row_joined_capture(), CAPTURED_WIDTH
-        )
-        self.assertEqual(
-            [tmux_send._visible(line).rstrip() for line in lines[1:4]],
-            ["", CAPTURED_BORDER, "❯"],
-        )
-
-    def test_claude_blank_row_joined_before_border_is_clear(self) -> None:
+    def test_claude_captured_composer_is_clear(self) -> None:
         for busy in (False, True):
             with self.subTest(busy=busy):
-                capture = claude_blank_row_joined_capture(busy=busy)
+                capture = claude_captured_rows(busy=busy)
                 self.assertEqual(
                     tmux_send.classify_capture(capture, CAPTURED_WIDTH, 79, 23),
                     "CLEAR",
                 )
 
-    def test_claude_draft_after_blank_row_join_is_occupied(self) -> None:
+    def test_claude_captured_draft_is_occupied(self) -> None:
         for busy in (False, True):
             with self.subTest(busy=busy):
-                capture = claude_blank_row_joined_capture("draft", busy=busy)
+                capture = claude_captured_rows("draft", busy=busy)
                 self.assertEqual(
                     tmux_send.classify_capture(capture, CAPTURED_WIDTH),
                     "OCCUPIED",
                 )
 
-    def test_two_blank_rows_joined_before_border_split_into_rows(self) -> None:
-        capture = "\n".join(
-            [f"{' ' * WIDTH * 2}{BORDER}❯\u00a0", BORDER, "  ⏵⏵ auto mode on"]
-        ) + "\n"
-        self.assertEqual(
-            tmux_send._capture_lines(capture, WIDTH)[:4],
-            [" " * WIDTH, " " * WIDTH, BORDER, "❯\u00a0"],
+    def test_rows_joined_by_capture_pane_j_are_unknown(self) -> None:
+        # The sender captures without -J; a joined row is never split back.
+        footer = "  ? for shortcuts".ljust(22) + "Gemini 3.8 Flash · high"
+        captures = (
+            f"{STYLED_BORDER}❯\u00a0\n{BORDER}\n  ⏵⏵ auto mode on\n",
+            f"{' ' * WIDTH}{BORDER}❯\u00a0\n{BORDER}\n  ⏵⏵ auto mode on\n",
+            f"{BORDER}\n❯\u00a0\n{BORDER}  ⏵⏵ auto mode on\n",
+            f"{STYLED_BORDER}>\n{BORDER}\n{footer}\n",
         )
-        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "CLEAR")
+        for capture in captures:
+            with self.subTest(capture=capture):
+                self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
 
-    def test_blank_row_joined_before_non_border_text_is_not_split(self) -> None:
-        joined = f"{' ' * WIDTH}{'=' * WIDTH}❯\u00a0"
-        capture = "\n".join([BORDER, joined, BORDER, "  ⏵⏵ auto mode on"]) + "\n"
-        self.assertEqual(tmux_send._capture_lines(capture, WIDTH)[1], joined)
-        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
-
-    def test_blank_row_joined_before_border_without_prompt_is_not_split(
-        self,
-    ) -> None:
-        for tail in ("", "ordinary output"):
-            with self.subTest(tail=tail):
-                joined = f"{' ' * WIDTH}{BORDER}{tail}"
-                capture = "\n".join([joined, "❯\u00a0", BORDER, "  ⏵⏵ auto mode on"])
-                self.assertEqual(
-                    tmux_send._capture_lines(capture + "\n", WIDTH)[0], joined
-                )
-                self.assertEqual(
-                    tmux_send.classify_capture(capture + "\n", WIDTH), "UNKNOWN"
-                )
-
-    def test_claude_joined_bottom_border_ignores_one_shell_status(self) -> None:
+    def test_claude_bottom_border_ignores_one_shell_status(self) -> None:
         status = (
             "  ⏵⏵ bypass permissions on · 1 shell · ← for agents · ↓ to manage"
         )
-        capture = "\n".join([BORDER, "❯\u00a0", f"{BORDER}{status}"]) + "\n"
+        capture = "\n".join([BORDER, "❯\u00a0", BORDER, status]) + "\n"
         self.assertEqual(
             tmux_send.classify_capture(capture, WIDTH, 2, 1),
             "CLEAR",
@@ -492,7 +438,8 @@ class ClassifyCaptureTests(unittest.TestCase):
                 [
                     BORDER,
                     "❯\u00a0queued wake",
-                    f"{BORDER}  ⏵⏵ bypass permissions on · 1 shell",
+                    BORDER,
+                    "  ⏵⏵ bypass permissions on · 1 shell",
                 ]
             )
             + "\n",
@@ -536,15 +483,6 @@ class ClassifyCaptureTests(unittest.TestCase):
             tmux_send.classify_capture(capture, WIDTH, 2, 1),
             "UNKNOWN",
         )
-
-    def test_full_width_border_does_not_split_before_arbitrary_text(self) -> None:
-        joined = f"{BORDER}ordinary output"
-        capture = "\n".join([joined, BORDER, "  ⏵⏵ auto mode on"]) + "\n"
-        self.assertEqual(
-            tmux_send._capture_lines(capture, WIDTH),
-            [joined, BORDER, "  ⏵⏵ auto mode on"],
-        )
-        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
 
     def test_claude_background_agent_panel_accepts_clear_composer(self) -> None:
         for agent_count in (1, 3):
@@ -630,11 +568,12 @@ class ClassifyCaptureTests(unittest.TestCase):
                     tmux_send.classify_capture(capture, WIDTH), "UNKNOWN"
                 )
 
-    def test_claude_panel_row_joined_onto_lower_border_counts_as_panel(self) -> None:
+    def test_claude_panel_row_below_lower_border_counts_as_panel(self) -> None:
         rows = [
             BORDER,
             "❯\u00a0",
-            f"{BORDER}  ● main",
+            BORDER,
+            "  ● main",
             "  ◯ general-purpose-0  Waiting",
         ]
         capture = "\n".join(rows) + "\n"
@@ -644,10 +583,10 @@ class ClassifyCaptureTests(unittest.TestCase):
         )
         self.assertEqual(tmux_send.classify_capture(subagent, WIDTH), "UNKNOWN")
 
-    def test_claude_unindented_text_joined_onto_lower_border_is_unknown(self) -> None:
-        for joined in ("$ ls", "──  note"):
-            with self.subTest(joined=joined):
-                capture = "\n".join([BORDER, "❯\u00a0", f"{BORDER}{joined}"]) + "\n"
+    def test_claude_unindented_text_below_lower_border_is_unknown(self) -> None:
+        for row in ("$ ls", "──  note"):
+            with self.subTest(row=row):
+                capture = "\n".join([BORDER, "❯\u00a0", BORDER, row]) + "\n"
                 self.assertEqual(
                     tmux_send.classify_capture(capture, WIDTH), "UNKNOWN"
                 )
@@ -668,10 +607,6 @@ class ClassifyCaptureTests(unittest.TestCase):
 
     def test_agy_bare_prompt_is_clear(self) -> None:
         self.assertEqual(tmux_send.classify_capture(agy_capture(), WIDTH), "CLEAR")
-
-    def test_agy_prompt_joined_to_full_width_border_is_clear(self) -> None:
-        capture = agy_joined_border_capture()
-        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "CLEAR")
 
     def test_agy_typed_and_multiline_drafts_are_occupied(self) -> None:
         for capture in (agy_capture("draft"), agy_capture("first", "second")):
@@ -901,7 +836,7 @@ class ClassifyCaptureTests(unittest.TestCase):
 class CursorClassificationTests(unittest.TestCase):
     def composer(self, capture: str) -> object:
         return tmux_send._composer(
-            tmux_send._capture_lines(capture, WIDTH), WIDTH
+            tmux_send._capture_lines(capture), WIDTH
         )
 
     def test_empty_composer_is_clear_in_both_renderings(self) -> None:
@@ -1150,15 +1085,15 @@ class CaptureTargetTests(unittest.TestCase):
         self.assertEqual(actual.composer.client, "claude")
         self.assertEqual(call.call_count, 1)
 
-    def test_joined_claude_border_returns_the_normalized_composer(self) -> None:
-        responses = (self.completed(claude_joined_border_capture()),)
+    def test_capture_keeps_pane_rows_unjoined(self) -> None:
+        responses = (self.completed(claude_captured_rows()),)
         with mock.patch.object(tmux_send, "_tmux", side_effect=responses) as call:
             actual = tmux_send.capture_target(pane())
         self.assertEqual(actual.state, "CLEAR")
         self.assertEqual(actual.composer.client, "claude")
         self.assertEqual(
             call.call_args_list[0].args,
-            ("capture-pane", "-p", "-e", "-J", "-t", "%7"),
+            ("capture-pane", "-p", "-e", "-t", "%7"),
         )
         self.assertEqual(call.call_count, 1)
 

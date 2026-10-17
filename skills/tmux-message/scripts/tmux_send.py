@@ -247,61 +247,13 @@ def _is_plain_full_width_border(raw_line: str, pane_width: int | None) -> bool:
     return _is_full_width_border(raw_line, pane_width) and set(visible) <= {"─", "━"}
 
 
-def _has_plain_full_width_border_prefix(
-    raw_line: str, pane_width: int | None
-) -> bool:
-    visible = _visible(raw_line)
-    border_length = len(visible) - len(visible.lstrip("─━"))
-    minimum = 8 if pane_width is None else max(pane_width - 1, 1)
-    return border_length >= minimum
+def _capture_lines(raw: str) -> list[str]:
+    """Return one line per pane row.
 
-
-def _raw_offset_after_visible_chars(raw: str, count: int) -> int | None:
-    visible_count = 0
-    raw_position = 0
-    for match in ESCAPE_RE.finditer(raw):
-        segment_length = match.start() - raw_position
-        if visible_count + segment_length >= count:
-            return raw_position + count - visible_count
-        visible_count += segment_length
-        raw_position = match.end()
-    if visible_count + len(raw) - raw_position >= count:
-        return raw_position + count - visible_count
-    return None
-
-
-def _split_joined_border(raw_line: str, pane_width: int | None) -> list[str]:
-    if pane_width is None or pane_width <= 0:
-        return [raw_line]
-    visible = _visible(raw_line)
-    # tmux -J pads a soft-wrapped blank row to the pane width, so the blank
-    # row Claude Code 2.1.280 draws above its composer can arrive joined in
-    # front of the border (observed 2026-10-16). Blank rows are split off only
-    # when the border-plus-prompt boundary follows them.
-    border_start = 0
-    while visible[border_start : border_start + pane_width] == " " * pane_width:
-        border_start += pane_width
-    border = visible[border_start : border_start + pane_width]
-    joined_prompt = visible[border_start + pane_width :]
-    if not (set(border) <= {"─", "━"} and joined_prompt.startswith(("❯", ">"))):
-        return [raw_line]
-    offsets = [
-        _raw_offset_after_visible_chars(raw_line, count)
-        for count in range(pane_width, border_start + 2 * pane_width, pane_width)
-    ]
-    if None in offsets:
-        return [raw_line]
-    starts = [0, *offsets]
-    ends = [*offsets, len(raw_line)]
-    return [raw_line[start:end] for start, end in zip(starts, ends)]
-
-
-def _capture_lines(raw: str, pane_width: int | None) -> list[str]:
-    """Undo tmux -J joining blank rows and a full-width border to a prompt."""
-    lines: list[str] = []
-    for raw_line in raw.splitlines():
-        lines.extend(_split_joined_border(raw_line, pane_width))
-    return lines
+    The capture is taken without capture-pane -J, so a client row drawn up to
+    the right edge stays its own row instead of being joined to the next one.
+    """
+    return raw.splitlines()
 
 
 def _content(annotated: list[tuple[str, bool]]) -> tuple[str, bool, bool]:
@@ -354,27 +306,19 @@ def _claude_region(
 ) -> ClaudeRegion | None:
     bottom = None
     for index in range(len(lines) - 1, -1, -1):
-        if _has_plain_full_width_border_prefix(lines[index], pane_width):
+        if _is_plain_full_width_border(lines[index], pane_width):
             bottom = index
             break
     if bottom is None:
         return None
 
     # Claude Code draws only status and panel rows indented at least two
-    # columns below its composer (observed 2026-10-07 on 2.1.280 and 2.1.292),
-    # including a status row that capture-pane -J joined onto the lower border.
+    # columns below its composer (observed 2026-10-07 on 2.1.280 and 2.1.292).
     # Any other row means the bordered box is history, such as a transcript in
-    # another client. A joined row starts at the pane width, so border glyphs
-    # of its own are not mistaken for the border.
-    bottom_visible = _visible(lines[bottom])
-    border_end = len(bottom_visible) - len(bottom_visible.lstrip("─━"))
-    if pane_width is not None and pane_width > 0:
-        border_end = min(border_end, pane_width)
-    joined_tail = bottom_visible[border_end:].rstrip()
+    # another client.
     trailing_nonblank = [
         _visible(line).rstrip() for line in lines[bottom + 1 :] if _visible(line).strip()
     ]
-    trailing_nonblank = ([joined_tail] if joined_tail else []) + trailing_nonblank
     if any(not row.startswith("  ") for row in trailing_nonblank):
         return None
     trailing_panel = tuple(
@@ -836,7 +780,7 @@ def classify_capture(
     cursor_y: int | None = None,
 ) -> str:
     """Classify an ANSI-preserving capture without exposing its contents."""
-    lines = _capture_lines(raw, pane_width)
+    lines = _capture_lines(raw)
     if not lines:
         return UNKNOWN
     if _is_dialog(lines):
@@ -950,7 +894,7 @@ def resolve_target(target: str) -> tuple[PaneIdentity | None, str, str]:
 
 
 def capture_target(pane: PaneIdentity) -> CaptureResult:
-    capture = _tmux("capture-pane", "-p", "-e", "-J", "-t", pane.pane_id)
+    capture = _tmux("capture-pane", "-p", "-e", "-t", pane.pane_id)
     if capture.returncode != 0:
         return CaptureResult(
             UNKNOWN,
@@ -958,7 +902,7 @@ def capture_target(pane: PaneIdentity) -> CaptureResult:
             capture.stderr.strip() or "resolved pane vanished before capture",
             None,
         )
-    lines = _capture_lines(capture.stdout, pane.pane_width)
+    lines = _capture_lines(capture.stdout)
     cursor_x = None
     cursor_y = None
     if _opencode_region(lines) is not None:

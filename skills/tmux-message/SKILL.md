@@ -320,17 +320,23 @@ exception. A timeout wrapper must allow longer than the two
 
 ## Classifier and verification contract
 
-The script captures ANSI attributes and joins soft-wrapped terminal rows:
+The script captures ANSI attributes one pane row per line:
 
-    tmux capture-pane -p -e -J -t <pinned-pane-id>
+    tmux capture-pane -p -e -t <pinned-pane-id>
 
-When tmux marks a pane-width Claude Code or Antigravity CLI border as soft
-wrapped into the following prompt row, the script separates that exact
-border-plus-prompt boundary before classification. Blank rows that tmux
-padded to the pane width and joined in front of such a border are separated
-too, but only when the border-plus-prompt boundary follows them; captures of
-Claude Code 2.1.280 on 2026-10-16 showed one such row above the composer.
-Other overlong rows remain unchanged.
+It deliberately omits `-J`. That flag joins every row the terminal marks as
+soft wrapped onto the next row. Claude Code and Antigravity CLI draw
+full-width rows (composer borders, padded blank rows) that the terminal marks
+that way, so `-J` merged a border with its prompt, with the row above it or
+with the status row below it, and the live composer went unrecognized; Codex
+history rows were joined the same way. On 2026-10-16, Claude Code 2.1.302,
+Codex 0.156.1, Antigravity CLI 1.3.0 and OpenCode 1.18.31 in 100-column panes
+produced the same composer text with and without `-J` for short, wrapped and
+unbroken-token drafts, because each draws its own composer line breaks; the
+only difference was trailing padding `-J` kept on a short Codex draft. Cursor
+CLI was not rechecked live; none of its 65 recorded captures from 2026-10-02,
+taken with `-J` at widths 80 to 120, contained a joined row. A capture whose
+rows are joined anyway is not split back and classifies as `UNKNOWN`.
 
 It recognizes only anchored Claude Code, Codex, Antigravity CLI, OpenCode, and
 Cursor CLI composer regions. The Antigravity CLI 1.1.27 and OpenCode 1.18.31
@@ -340,12 +346,12 @@ shapes were live-checked on 2026-09-14, and the Cursor CLI 2026.10.01 and
 - Claude Code requires full-width top and bottom borders and one column-zero
   `❯` prompt inside them. Clear-versus-occupied classification comes from that
   bordered composer itself; it does not depend on the wording or presence of a
-  status row below the bottom border, but every nonblank row below that border,
-  including text joined onto it, must be indented at least two columns, as
-  Claude Code 2.1.280 and 2.1.292 draw their status and panel rows (observed
-  2026-10-07); any other row means the bordered box is history rather than the
-  live composer. The terminal cursor is not consulted: the sandboxed client hides it
-  and parks it in the pane's last column, not necessarily on a composer row.
+  status row below the bottom border, but every nonblank row below that border
+  must be indented at least two columns, as Claude Code 2.1.280 and 2.1.292
+  draw their status and panel rows (observed 2026-10-07); any other row means
+  the bordered box is history rather than the live composer. The terminal
+  cursor is not consulted: the sandboxed client hides it and parks it in the
+  pane's last column, not necessarily on a composer row.
   The sandboxed shape was reported from a live pane (cursor hidden at 79,18 on
   80x24) and replayed from a host capture; no raw capture of a sandboxed pane
   backs it. Not
