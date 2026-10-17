@@ -123,8 +123,9 @@ Immediately after approval:
 
 1. Write the final approved plan (including any revisions and edits
    from the approval step) where the repository keeps documents of
-   its kind — its design-docs location for a design, its plans
-   location for a plan — following its naming convention. Where it
+   its kind — its design-docs location when the user or the calling
+   skill calls the document a design, its plans location otherwise —
+   following its naming convention. Where it
    has none, use `plans/YYYY-MM-DD-<slug>.md` at the main checkout's
    root. Never save inside a worktree: other sessions cannot read it
    there, and it is deleted with the worktree. Create the directory if
