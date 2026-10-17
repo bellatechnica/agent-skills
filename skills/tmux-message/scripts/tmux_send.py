@@ -87,6 +87,7 @@ DIALOG_PATTERNS = (
     re.compile(r"\btab/arrow keys to navigate\b.*\besc to cancel\b"),
     re.compile(r"\bshift\+tab use plan mode\b.*\besc dismiss\b"),
     re.compile(r"\btype a name and press enter\b"),
+    re.compile(r"\benter submit\b.*\besc back\b"),
 )
 
 

@@ -268,6 +268,21 @@ class ClassifyCaptureTests(unittest.TestCase):
         capture = codex_capture("\x1b[2mAsk Codex to do anything\x1b[0m")
         self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "CLEAR")
 
+    def test_codex_custom_review_instructions_field_is_a_dialog(self) -> None:
+        # Codex 0.156.1, /review then "Custom review instructions": a prompt
+        # row with the cursor in it and a hint row shaped like the footer.
+        rows = [
+            "  \x1b[1mCustom review instructions\x1b[0m",
+            "",
+            "\x1b[38;5;75m›\x1b[39m \x1b[2mType instructions and press Enter\x1b[0m",
+            "",
+            "  \x1b[1menter\x1b[0;2m submit · \x1b[0;1mesc\x1b[0;2m back",
+        ]
+        self.assertEqual(
+            tmux_send.classify_capture("\n".join(rows) + "\n", 100, 2, 2),
+            "DIALOG",
+        )
+
     def test_dim_native_paste_placeholders_are_occupied(self) -> None:
         captures = (
             codex_capture("\x1b[2m[Pasted Content 1834 chars]\x1b[0m"),

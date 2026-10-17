@@ -379,6 +379,9 @@ shapes were live-checked on 2026-09-14, and the Cursor CLI 2026.10.01 and
   accepted with the blank spacer above the summary row, and none of the lower
   rows is a footer by itself. Checked 2026-10-07 on Codex 0.156.1 and 0.160.1,
   including a paste and submit into an idle pane and into a pane mid-turn.
+  The `/review` custom-instructions field in Codex 0.156.1 draws the same
+  prompt over an `enter submit · esc back` row, which passes the summary-row
+  shape, so a bottommost row with those words is `DIALOG`.
 - Antigravity CLI requires full-width top and bottom borders, one column-zero
   `>` prompt, two-column continuation indentation, and the model-and-effort
   footer immediately below the lower border. Its `!` shell mode does not match
