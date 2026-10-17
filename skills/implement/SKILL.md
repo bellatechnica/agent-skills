@@ -96,13 +96,17 @@ Who does what depends on the mode:
 
 Rules that hold in every mode:
 
-- **Every build happens in a worktree of its own** — this session's,
-  a subagent's, or another session's — created before the first edit,
-  never in the repo root or in another session's worktree; `handoff`'s
-  sizing section has the rules. Other sessions may land on the branch
-  this session sits on at any moment, and a commit made there races
-  them. Fixes during review are made in the worktree of the branch
-  under review, as `review-loop` says.
+- **Every build happens in a worktree of its own**, created by
+  whoever builds — this session, a subagent, or another session —
+  before the first edit; `handoff`'s sizing section has the rules,
+  including which commit to base it on. Never build in the repo root,
+  in a worktree someone else is building in, or in another live
+  session's worktree. Other sessions may land on the branch this
+  session sits on at any moment, and a commit made there races them.
+- **A subagent's worktree passes to the owner when the subagent
+  returns.** From then on it is not another session's worktree: the
+  owner verifies it (§4) and makes review fixes there, as
+  `review-loop` says.
 - **Nothing writes to a live system** — a production database, a
   deployed service, a published release — until `review-loop` has met
   its level on the code that does the writing.
@@ -114,12 +118,6 @@ Rules that hold in every mode:
   implements it.
 - **Run targeted tests while iterating**; the full suite belongs to
   the merge gate.
-- **Clean up after landing.** Once a branch has landed (it is an
-  ancestor of the trunk), the owner of the change removes its worktree
-  and deletes its branch as `handoff` §5 describes — including a
-  worktree a subagent built — unless the user has said work continues
-  on that branch. The §5 report says what was removed and what was
-  kept.
 
 Per mode:
 
@@ -136,8 +134,9 @@ Per mode:
     choose an execution mode again. Before `review-loop`, verify the
     built result as `implement` §4 describes.
   - The continuing role this session keeps, by name: it answers design
-    questions, checks the first ready branch against the plan, and
-    signs off on the final one. Ask the new session to send its first
+    questions, checks the first ready branch against the plan, signs
+    off on the final one, and closes the new session's window once
+    its branch has landed (§6). Ask the new session to send its first
     ready branch here before starting `review-loop`, and the final
     branch when the loop ends. Without this assignment `handoff`'s
     default applies and this session would stay out.
@@ -182,3 +181,22 @@ sign-off. Do not merge or publish without an
 authorization that originates with the user, given directly or
 relayed (including a coordinator's standing grant), as `handoff`
 describes.
+
+## 6. After landing
+
+Once a branch has landed (it is an ancestor of the trunk), and unless
+the user has said work continues on it:
+
+- **Built by this session or a subagent**: this session removes the
+  worktree and deletes the branch as `handoff` §5 describes.
+- **Built by a handed-off session**: that session cleans up its own
+  worktree and branch, as `handoff` §5 tells it to. This session then
+  closes the window it spawned, once the branch has landed, the
+  session's recap has reached the user, and its worktree is gone —
+  checked against those artifacts, not against the session's own
+  summary.
+- **Under a coordinator**: the coordinator cleans up and closes
+  windows as its own skill says.
+
+Then tell the user what was removed, what was closed, and what was
+kept.
