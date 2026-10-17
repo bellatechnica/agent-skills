@@ -1,6 +1,6 @@
 ---
 name: plan-upfront
-description: Plan a task before implementation - explore, surface the requirements upfront (with enumeration artifacts for subsystems whose promises span time or failures), ask few but sufficient question rounds, then save the approved plan to plans/YYYY-MM-DD-<slug>.md. Use when the user wants a written plan before any implementation.
+description: Plan a task before implementation - explore, surface the requirements upfront (with enumeration artifacts for subsystems whose promises span time or failures), ask few but sufficient question rounds, then save the approved plan or design where the repository keeps such documents (plans/YYYY-MM-DD-<slug>.md when it has no convention). Use when the user wants a written plan before any implementation.
 argument-hint: <task to plan>
 ---
 
@@ -122,9 +122,13 @@ them — the approved version is the plan.
 Immediately after approval:
 
 1. Write the final approved plan (including any revisions and edits
-   from the approval step) to `plans/YYYY-MM-DD-<slug>.md` at the
-   project root — unless the repo has a standing plans location or
-   naming convention, which wins. Create the directory if needed.
+   from the approval step) where the repository keeps documents of
+   its kind — its design-docs location for a design, its plans
+   location for a plan — following its naming convention. Where it
+   has none, use `plans/YYYY-MM-DD-<slug>.md` at the main checkout's
+   root. Never save inside a worktree: other sessions cannot read it
+   there, and it is deleted with the worktree. Create the directory if
+   needed.
    Never overwrite an existing plan file — if the name collides, add a
    `-2` style suffix.
 2. Tell the user where the plan was saved, then **stop**. Do not begin
