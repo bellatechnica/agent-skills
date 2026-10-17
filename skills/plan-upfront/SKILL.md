@@ -128,7 +128,10 @@ Immediately after approval:
    - **A design** — when the user or the calling skill calls the
      document one — goes to the main checkout's `do_not_commit/` area,
      following that area's folder convention, named
-     `YYYY-MM-DD-<slug>.md`.
+     `YYYY-MM-DD-<slug>.md`. Before the first write, confirm the area
+     is ignored with `git check-ignore -v <path>`; where it is not,
+     create it at the main checkout's root and ignore it in
+     `.git/info/exclude`, never in the tracked `.gitignore`.
    - **A plan** goes where the repository keeps plans, following its
      naming convention; where it has none, to `plans/YYYY-MM-DD-<slug>.md`
      at the main checkout's root.

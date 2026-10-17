@@ -37,7 +37,8 @@ Where each document goes:
 - **Execution plans** — how a design is split into phases and streams,
   their order, and their dependencies — go in the main checkout's
   `do_not_commit/`.
-- **The status file** (§1) goes there too.
+- **The status file** (§1) goes there too. Confirm that area is
+  ignored before the first write, as `plan-upfront` describes.
 
 Nothing the coordinator writes lives inside a worktree.
 
