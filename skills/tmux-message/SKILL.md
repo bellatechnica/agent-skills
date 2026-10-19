@@ -382,6 +382,14 @@ shapes were live-checked on 2026-09-14, and the Cursor CLI 2026.10.01 and
   The `/review` custom-instructions field in Codex 0.156.1 draws the same
   prompt over an `enter submit · esc back` row, which passes the summary-row
   shape, so a bottommost row with those words is `DIALOG`.
+  The summary row is recognized by its ` · ` separator, so a Codex
+  `tui.status_line` setting with a single item draws a row without one and
+  leaves the pane `UNKNOWN layout` whether idle or holding a draft, unless a
+  warnings notice happens to share that row, as it can before Codex 0.160;
+  configure two or more items, or leave the setting unset, in a pane that
+  should receive messages. Checked 2026-10-16: Codex 0.153.3 was refused idle
+  and with a draft, and Codex 0.156.1, whose row carried a warnings notice, was
+  accepted because that notice supplies the separator.
 - Antigravity CLI requires full-width top and bottom borders, one column-zero
   `>` prompt, two-column continuation indentation, and the model-and-effort
   footer immediately below the lower border. Its `!` shell mode does not match
