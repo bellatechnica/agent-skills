@@ -200,7 +200,5 @@ each with its one-line reason; the findings answered by adding or by
 refusing complexity, for the decisions list `implement` §5 asks of the
 leading session; and residual risk — what no reviewer
 examined. Close any persistent reviewer session as `review-session`
-directs. Do not merge or publish without an authorization that
-originates with the user, given directly or relayed (including a coordinator authorizing a draft PR under the user's
-assignment of the workstream, or relaying the user's merge
-permission), as `handoff` describes.
+directs. The loop ends with this verdict; what happens to the change
+next is the caller's decision, not the loop's.

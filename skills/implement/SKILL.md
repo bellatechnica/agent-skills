@@ -161,10 +161,11 @@ Per mode:
     that belong on the decisions list (§5), and, after its branch has landed and
     its cleanup is done, a copy of the recap it gave the user.
   - The new session owns everything else: running `review-loop` on its
-    own change, the merge, and its recap to the user. It merges only
-    after this session reports that the decisions list holds no major
-    decisions without an alternative, or relays the user's approval of them (§5); a draft PR
-    need not wait. Once its branch lands, it cleans up as
+    own change, landing it, and its recap to the user. It lands only as
+    `implement` §5's "Landing" describes, on this session's word —
+    never on a clean review alone; a merge also waits until this
+    session reports that the decisions list holds no major decisions
+    without an alternative, or relays the user's approval of them. Once its branch lands, it cleans up as
     `new-session` §6 describes.
 - **Several sessions**: one brief per stream, each with its own branch
   and worktree and the merge order between streams written into it.
@@ -274,14 +275,45 @@ does not cover major decisions the user has not yet seen. Work that merges nothi
 a draft PR, the next phase, the next session — need not wait for the
 approval.
 
-Do not merge or publish without an
-authorization that originates with the user, given directly or
-relayed (including a coordinator authorizing a draft PR under the user's
-assignment of the workstream, or relaying the user's merge
-permission), as `handoff`
-describes. Once the branch lands, whether in this turn or after a
-later merge authorization, continue with §6 before reporting the work
-finished.
+### Landing
+
+The same rule holds in every mode. The owner of the change (§2) lands
+it. In a separate session or several sessions, the owner acts on this
+session's word (under `coordinator`, the coordinator's): once the
+change is clean, this session sends it which case below applies and,
+for a merge, the user's merge instruction verbatim. **Clean** here means `review-loop` has met its
+level and any sign-off has passed (under `coordinator`, the clean phase
+review).
+
+Which case applies follows how the repository lands changes: its agent
+instructions first, then its history (pull-request merges, or PR
+numbers in squashed subjects, mean pull requests). Where neither
+settles it, this session asks the user, in the batched round of §3,
+and passes the answer on with its word. Then, once clean:
+
+- **Pull requests, no merge permission from the user**: publish the
+  branch as a **draft PR**. The user's request to build the plan (§0)
+  is the authorization's origin; cite it when relaying. Without CI, run
+  the full suite once before publishing and put the count in the PR
+  description.
+- **Merge permission from the user** ("merge when clean" or similar)
+  **and the major decisions approved** (above): submit to the
+  repository's merger session where one exists (`merge-main`);
+  otherwise rebase onto the trunk, run the full suite once, and
+  fast-forward the trunk (`--ff-only`). Where the trunk lives on a
+  remote, the fast-forward must reach it — by pushing the trunk, or by
+  merging the PR without a merge commit — before anything counts the
+  branch as landed. Cite the user's instruction verbatim when relaying
+  it.
+- **No pull requests and no merge permission**: report the branch ready
+  to the user.
+- **A branch built on another unlanded branch** (`new-session` §2)
+  never merges before it. With pull requests, its draft PR targets
+  that branch, not the trunk, and is retargeted to the trunk only after
+  rebasing once that branch has merged.
+
+Once the branch lands, whether in this turn or after a later merge
+authorization, continue with §6 before reporting the work finished.
 
 ## 6. After landing
 

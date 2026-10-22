@@ -124,29 +124,12 @@ authorization. Coordinator-specific rules:
   (for example, "the branch I base on has passed phase review" read
   from the status file, or "grep for Y finds nothing"), not as an
   assurance from you.
-- **Merging.** By default the repository is PR-style and has no
-  merger session. The implementing session never merges on its own:
-  - Without merge permission from the user, a clean phase review (§3)
-    authorizes the implementing session to publish its branch as a
-    **draft PR**, and the coordinator proceeds to the next phase. The
-    user's assignment of this workstream is the authorization's origin:
-    cite it when authorizing, since the implementing session's skills
-    refuse to publish without an authorization that originates with
-    the user.
-  - Only when the user's instruction allows merging ("you may merge
-    when clean" or similar) and the user has approved any major
-    decisions without an alternative on the phase's decisions list
-    (§3, `implement` §5) does a clean phase review authorize the
-    merge: submitted to the repo's merger session where one exists;
-    otherwise the implementing session rebases onto the trunk, runs the
-    full suite once, and fast-forwards the trunk (`--ff-only`) itself.
-    Where the trunk lives on a remote, the fast-forward must reach it —
-    by pushing the trunk, or by merging the PR without a merge commit —
-    before anything counts the branch as landed. Cite the user's
-    instruction verbatim when authorizing.
-  - In a repository without pull requests, a clean phase review
-    without merge permission leaves the branch reported ready to the
-    user, and the coordinator proceeds to the next phase.
+- **Landing** follows `implement` §5's "Landing", with the clean
+  phase review (§3) as its "clean". The implementing session never
+  lands on its own: the coordinator authorizes each step, citing the
+  user's assignment of this workstream for a draft PR and the user's
+  merge instruction verbatim for a merge. It proceeds to the next phase
+  once the draft PR is published or the branch is reported ready.
 - **Designs and amendments.** MAJOR DESIGNS always go to the user
   per artifact: show the resulting text and get their word. A major
   amendment with a real alternative goes in the batched round
@@ -161,10 +144,9 @@ authorization. Coordinator-specific rules:
   a major conflict appears, or when something it depends on changed.
   When the earlier phase landed by squash or rebase merge, it moves
   only its own commits: `git rebase --onto <trunk> <earlier phase's
-  old branch tip>`. A phase built on an earlier phase's unlanded
-  branch opens its draft PR against that branch, not the trunk, and
-  retargets it to the trunk only after rebasing once the earlier phase
-  has merged.
+  old branch tip>`. A phase built on an earlier phase's branch opens
+  its draft PR against that branch, as `implement` §5's "Landing"
+  describes.
 
 ## 3. Review
 
@@ -186,10 +168,8 @@ phase need not wait for it.
 
 Do not re-run the test suite on handed-off work: the merge gate — the
 merger session, the PR's CI, or, without either, the implementing
-session before it fast-forwards — runs it once on the tree that lands.
-In a PR-style repo without CI, the implementing session runs it once
-before publishing the draft PR and puts the count in the PR
-description. Re-run only when a result looks impossible, and say so.
+session before it fast-forwards — runs it once on the tree that lands
+(without CI, before the draft PR, as `implement` §5 says). Re-run only when a result looks impossible, and say so.
 
 ## 4. Shared resources
 

@@ -155,11 +155,7 @@ The prompt also carries:
 
 The handoff transfers OWNERSHIP. The spawned session owns its branch
 end to end — including reporting readiness to the user and running the
-merge flow itself when a user-originated authorization arrives —
-directly from the user, or relayed by another session passing the
-user's instruction on (multi-hop and conditional relays count: e.g.
-"review, then ask it to merge if good"). A session's own initiative
-never authorizes a merge; the chain must start at the user. By default the spawning session
+merge flow itself once the user authorizes it. By default the spawning session
 does not shepherd, batch, or relay other sessions' merges, and does not
 act as a standing manager or message hub for them — unless the handoff
 itself assigns it a continuing role, which the prompt then states.

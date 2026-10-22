@@ -192,6 +192,9 @@ landed yet. When it does:
       tmux send-keys -t <session>:<slug> Enter
 
   Mix as needed (a brief with no worktree, a worktree with no brief).
+- Name the repository's agent instructions and the user's global ones
+  by path in every prompt, and say they bind. A CLI loads its own
+  global file, which may not be the one this session follows, or none.
 - When the session will edit in its own worktree, say in the prompt
   that finishing includes cleaning up after itself once its branch has
   landed (§6), unless the user has noted further work on it.
