@@ -14,8 +14,11 @@ on it.
   several implementing sessions build: it writes the execution plan, hands
   out the work, reviews each phase against the design, and authorizes draft
   PRs (or merges, when allowed).
-- `handoff` — hand a work item to a new agent session. It writes a prompt or
-  handoff doc, launches the session, and keeps a durable channel to it.
+- `handoff` — hand a work item to a new agent session that will own it. It
+  writes a prompt or handoff doc and says how the session involves the user.
+- `new-session` — launch a separate agent session in a tmux window: the agent
+  and model, its message channel, its own worktree, resume, and cleanup after
+  its branch lands. `handoff`, `implement` and `review-session` launch through it.
 - `review-session` — keep an independent reviewer in a separate agent session
   across fix rounds, closing it when the reviewed change is clean.
 - `session-message` — choose and maintain the message channel between agent
@@ -39,7 +42,7 @@ on it.
 - `plan-upfront` — explore the task, surface the requirements, ask a few
   rounds of questions, and save the approved plan before writing code.
 - `implement` — build an approved plan, first choosing whether to do it in
-  the current session, a subagent, a handed-off session or several sessions,
+  the current session, a subagent, a separate session it leads or several sessions,
   then pass the result to `review-loop`.
 - `review-loop` — iterate on a finished change with a reviewer until it is
   good enough for the cost of a mistake in it, choosing how strict to be
@@ -91,7 +94,7 @@ guaranteed.
 
 ## Agent Relay
 
-`session-message` gives `handoff` and `review-session` one protocol for choosing
+`session-message` gives every session that `new-session` launches one protocol for choosing
 and maintaining their channel. It uses Agent Relay as the default durable
 channel for messages between coding-agent sessions. It assumes the relay's `agent_relay` tools are configured
 in the agent CLI as a Model Context Protocol (MCP) server, and confirms that

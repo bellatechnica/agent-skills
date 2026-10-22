@@ -104,7 +104,8 @@ databases, a handoff that carries SPEC POINTERS (the design and the
 execution plan, wherever they are tracked, are the contract; the
 handoff holds only the breakdown), the repository's and the user's
 global agent instructions by path, the known traps by name, and the
-reporting channel. See the `handoff` skill for mechanics. The handoff
+reporting channel. See the `handoff` skill for writing the handoff
+and `new-session` for launching the session. The handoff
 prompt states the coordinator's continuing role: the session sends its
 tips to the coordinator for phase review as `review-loop` describes,
 each with the decisions it made that belong on the decisions list
@@ -155,8 +156,8 @@ authorization. Coordinator-specific rules:
   goes on the decisions list with a pointer to the amended section.
 - **Later phases do not wait for earlier ones to merge.** A later
   phase starts from the trunk, or from an earlier phase's branch when
-  it cannot build without that phase's unlanded commits (`handoff`
-  §0). It rebases only when an earlier phase it needs has merged, when
+  it cannot build without that phase's unlanded commits (`new-session`
+  §2). It rebases only when an earlier phase it needs has merged, when
   a major conflict appears, or when something it depends on changed.
   When the earlier phase landed by squash or rebase merge, it moves
   only its own commits: `git rebase --onto <trunk> <earlier phase's

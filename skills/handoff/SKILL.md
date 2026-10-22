@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Hand off a work item to a new parallel agent session, using session-message for Agent Relay or an announced direct fallback. Default to the same assistant CLI unless the user specifies another, and launch Codex or Claude Code through codex-sbx or claude-sbx when Docker Sandbox or a settings profile is requested. Use a prompt for simple tasks, a handoff doc in a do_not_commit area for complex ones, an isolated worktree for file edits, and coordination constraints when shared resources demand them.
+description: Hand off a work item to a new parallel agent session that takes ownership of it - decide between a prompt and a handoff doc in a do_not_commit area, write the doc (spec pointers, binding versus advisory requirements, ruled-out options, coordination constraints when shared resources demand them), tell the session how to involve the user, and launch it with new-session. Use when the user wants work handed to another session, or a workflow dispatches a work item a session will own end to end.
 ---
 
 # Hand off work to a parallel session
@@ -10,76 +10,27 @@ directly, it spans hours or many commits, or it must survive this
 session. Subagents live inside the spawning session and report back to
 it, not to the user.
 
-Choose the target agent before sizing the handoff. Unless the user names
-one, launch the same assistant family as the spawning session: Codex
-launches `codex`, Claude Code launches `claude`, and another supported
-assistant launches its own CLI. An explicit user choice always wins.
-Verify that the selected executable exists; if it does not, report that
-instead of silently substituting another agent.
+A handoff transfers ownership of a work item to a new session (§4).
+`new-session` launches it: the agent and model, the message channel,
+the repo root or its own worktree and the base commit, the tmux window,
+resume, and cleanup once its branch has landed. This skill decides what
+the new session is given and how it involves the user.
 
-Choose the communication channel before sizing the handoff. Use
-`session-message` for Relay preflight, the announced direct fallback,
-registration, listeners, conditional wake notices, and response delivery.
-Preserve its chosen channel for this handoff.
+## 0. Prompt or handoff doc?
 
-## 0. Size the handoff first
+Default to the cheap side. A handoff doc exists to give the
+new session something durable to anchor on: multi-step implementation
+breakdowns, design notes and decisions it must respect, spec
+pointers, consumer/call-site inventories, traps, commit order,
+coordination conditions. Write one when the handoff carries more
+than fits comfortably in a prompt, or when the content must outlive
+the first message (the session re-reads it; other sessions can see
+it). **Simple, self-contained tasks need no doc** — put the whole
+task in the launch prompt and skip section 1. A one-paragraph handoff
+doc is a sign the prompt would have been enough.
 
-Two independent choices — make both explicitly, and default to the
-cheap side of each:
-
-- **Handoff doc or just a prompt?** A handoff doc exists to give the
-  new session something durable to anchor on: multi-step implementation
-  breakdowns, design notes and decisions it must respect, spec
-  pointers, consumer/call-site inventories, traps, commit order,
-  coordination conditions. Write one when the handoff carries more
-  than fits comfortably in a prompt, or when the content must outlive
-  the first message (the session re-reads it; other sessions can see
-  it). **Simple, self-contained tasks need no doc** — put the whole
-  task in the spawn prompt and skip section 1. A one-paragraph handoff
-  doc is a sign the prompt would have been enough.
-- **Worktree or the repo as-is?** Three places exist and a spawned
-  session must not confuse them. Name them by ABSOLUTE PATH in the
-  prompt — never by the word "main", which is ambiguous three ways (the
-  branch, the repo root, and a worktree that happens to be called
-  `main`):
-  - **The repo root** (the main checkout, e.g. `/home/me/proj`) — where
-    read-only work runs. Reading here is free and needs no setup.
-  - **Another session's worktree** (any linked checkout reported by
-    `git worktree list`, including tool-managed paths such as
-    `<repo>/.claude/worktrees/`) — **off limits entirely, read or
-    write.** These are live workspaces holding uncommitted in-flight
-    work that an outside edit corrupts silently. Never let a worktree's
-    directory name be mistaken for a branch or for the repo root: if
-    one is named after a branch, "based on X" gets read as "inside the
-    directory called X", and the handoff lands in someone's workspace.
-  - **The spawned session's OWN new worktree** — the only place it may
-    edit anything.
-
-  So: work that will EDIT FILES creates its own worktree **from the
-  start**; read-only work starts at the repo root and creates a
-  worktree **at the moment it turns into edits, before the first
-  edit** — never editing where it was reading.
-
-  **Which commit does the new worktree start from?** A worktree is not
-  a copy — every worktree in a repo shares one object store — so the
-  only real choice is the base commit. **Default to the trunk (`main`),
-  not this session's branch.** The trunk is reviewed and current, while
-  an unlanded branch can still be rebased, squashed or rejected under
-  the child; worse, a child based on it carries the parent's commits
-  into its own merge, so landing the child lands unreviewed parent work
-  with it. Base on THIS session's branch only when the handed-off work
-  genuinely cannot build or run without commits that have not landed
-  yet. When it does:
-  - **commit them first** — a worktree starts from a commit, never from
-    a dirty tree, so uncommitted work is not inheritable at all;
-  - name the BRANCH to base on, never the directory;
-  - write the coupling into the handoff doc: the child rebases onto the
-    trunk once the parent lands, and must not merge before the parent.
-    When the parent lands by squash or rebase merge, the child moves
-    only its own commits: `git rebase --onto <trunk> <parent's old
-    branch tip>`.
-
-Everything below applies to whichever pieces you chose.
+Whether the session works at the repo root or in its own worktree, and
+on which base commit, is `new-session` §2.
 
 ## 1. Write the handoff doc first (when the size warrants one)
 
@@ -155,95 +106,12 @@ or think to ask about, and let the reply channel handle the rest.
   recommendation. There are no steps to break down yet, so the doc is
   context and boundaries only.
 
-## 2. Spawn the session in a new tmux window
+## 2. Write the prompt and launch
 
-- Current tmux session name: `tmux display-message -p '#S'`.
-- `tmux new-window -d -t '<session>:' -n <slug> -c <repo-root>` (`-d`
-  keeps the user's focus where it is; the trailing colon matters — a
-  bare `-t <session>` is parsed as a window index and fails once a
-  window occupies that index).
-- **Pass the model explicitly: default to the SAME model this session
-  is running.** Use `codex --model <model>` for Codex or
-  `claude --model <model>` for Claude Code. Without the flag the new
-  session falls back to a saved default, which can drift as the user
-  switches models. Deviate only deliberately — a genuinely mechanical
-  task on a cheaper model, or a model the user named — and say so in the
-  prompt so the session knows it was chosen, not inherited. For `codex-sbx`
-  and `claude-sbx`, the required profile is the explicit model/provider
-  choice; do not add `--model` unless the user asks to override that profile.
-- **Give the agent session a stable name for later resume.** For Codex,
-  send `/rename <window-slug>` once the session is up; revive it with
-  `codex resume <window-slug>`. For Claude Code, mint a UUID with
-  `uuidgen`, launch with `claude --session-id <uuid>`, append
-  `<date> claude <window-slug> <uuid>` to
-  `docs/do_not_commit/handoff-sessions.log`, and revive it with
-  `claude --resume <uuid>`. Send `/rename <window-slug>` there too so
-  its picker exposes the human-readable name. For sandboxed Codex, also append
-  `<date> codex-sbx <profile> <window-slug>` so a later resume uses the same
-  persistent sandbox.
-- Build the launch command for the selected agent, passing the handoff
-  as its initial prompt (write it without apostrophes, or send it
-  literally with `send-keys -l`):
-
-      # Codex (the default when this skill runs in Codex)
-      codex -C <repo-root> --model <model> "<prompt>"
-
-      # Codex in Docker Sandbox
-      codex-sbx <profile> "<prompt>"
-
-      # Claude Code (when this skill runs there or the user requests it)
-      claude --session-id <uuid> --model <model> "<prompt>"
-
-      # Claude Code in Docker Sandbox
-      claude-sbx <profile> --session-id <uuid> "<prompt>"
-
-  Other explicitly requested assistants use their equivalent workspace,
-  model, initial-prompt, naming, and resume options. Do not weaken their
-  normal sandbox or approval policy just to make the handoff unattended.
-- For `codex-sbx` and `claude-sbx`, launch from the repo root just as for the
-  corresponding direct client. The same repo root, agent, and profile reuse one
-  Docker sandbox and start another agent process there; this is expected. Give
-  every process a unique tmux window name and Relay slug even when the profile
-  repeats, plus its normal Codex session name or Claude UUID. Different agents
-  or profiles select different sandboxes.
-
-  The ordinary worktree rule is unchanged. Read-only sessions may share the
-  repo root. Every session that will edit files creates its OWN new worktree
-  after launch and moves into it before the first edit; two processes in one
-  container do not share an editing worktree. Do not launch either wrapper from
-  a host linked worktree: Docker mounts that directory without the parent
-  repository's Git metadata, so the sandboxed process cannot use Git there.
-
-  The launcher supplies the curated skills and `agent_relay` MCP configuration,
-  so do not add the Relay server interactively. A new Codex sandbox stops at
-  its login menu; before an unattended handoff, have the user authenticate
-  inside that sandbox and verify `codex login status` there. Never mount or copy
-  host Codex credentials. Docker's Codex startup already supplies
-  `--dangerously-bypass-approvals-and-sandbox`; do not append a duplicate because
-  Codex rejects it. Record Claude's profile with its session UUID:
-
-      <date> claude-sbx <profile> <window-slug> <uuid>
-
-  Resume from the same repo root with `codex-sbx <profile> resume
-  <window-slug>` or `claude-sbx <profile> --resume <uuid>`. Sandbox stop/start
-  preserves the shared VM state; sandbox removal or reset destroys every stored
-  login and agent session in it. Do not remove a reused sandbox until every
-  session using that repo/agent/profile combination has finished.
-- With a handoff doc and file edits, make the prompt say "create your
-  OWN NEW worktree", and name the branch to base it on; "based on main"
-  alone is what gets misread as "inside the worktree called main":
-
-      tmux send-keys -t <session>:<slug> -l '<agent-launch> "Read <handoff-doc-path>, then create your OWN NEW git worktree based on branch <branch> and implement it there. Do not edit any existing linked worktree reported by git worktree list, and do not edit the repo root. <constraints>"'
-      tmux send-keys -t <session>:<slug> Enter
-
-  Without either — the whole task in the prompt, no worktree. State the
-  read-only rule AND its escape hatch in the same breath, or the second
-  half gets invented on the spot:
-
-      tmux send-keys -t <session>:<slug> -l '<agent-launch> "<the full task>. You are in the repo root - read it and run things in it, but do NOT edit any file here, and do NOT touch any existing linked worktree reported by git worktree list. If the work turns into edits, create your OWN NEW worktree first and edit only there. <other constraints>. Report back to the user when done."'
-      tmux send-keys -t <session>:<slug> Enter
-
-  Mix as needed (a handoff doc with no worktree, a worktree with no doc).
+Launch with `new-session`. A handoff always anticipates communication —
+the session asks the sender about gaps in the handoff (below) — so the
+prompt tells it to load `session-message`, as `new-session` §1 says.
+The prompt also carries:
 
 - When there ARE coordination constraints, repeat the hard rule inline
   in the prompt (e.g. "edit code and run the offline suite only; do not
@@ -269,18 +137,8 @@ or think to ask about, and let the reply channel handle the rest.
   Say which case applies when writing the prompt.
 - Say in the prompt that ownership runs past the merge: once the branch
   lands, the session cleans up its own worktree, branch and scratch
-  databases (section 5) unless the user has noted further work on it.
-- Give the child and this session the exact channel instructions and addresses
-  specified by `session-message`. Include the selected client's listener rule
-  from `agent-relay-message` when Relay is selected. Resolve this session's
-  pane with `tmux display-message -p -t "$TMUX_PANE" '#S:#I.#P'` and the
-  child's pane by stable window name; these are tmux recovery or direct reply
-  addresses. Also exchange each reachable Codex thread UUID or exact session
-  name and, between Claude Code sessions, each Claude session name. Do not
-  require a native address from a session that has no reachable one. After
-  launch, maintain this session's listener when Relay is selected. The initial user-facing
-  handoff report is a commentary update when the current client must keep
-  its turn active for that listener.
+  databases (`new-session` §6) unless the user has noted further work
+  on it.
 - Coordination is two-way in either mode: the spawned session reports when it
   reaches a blocked step or is ready, and the spawning session sends the signal
   as soon as the blocking condition clears. Also update any durable signal
@@ -288,17 +146,7 @@ or think to ask about, and let the reply channel handle the rest.
 
 ## 3. Report and maintain the signal
 
-- Tell the user: window name, how to switch to it, the communication channel,
-  both relay slugs when relay is used, and what the new session was told to wait
-  for.
-- One worktree per session — never point the new session at a worktree
-  another session is using, and check what is already there
-  (`git worktree list`) before naming one. Sessions doing read-only work
-  share the repo root harmlessly; only editors need isolation.
-- **Your own worktree is not a handoff target.** If this session is
-  itself working in one, never phrase the prompt in a way that points
-  there — pass the BRANCH to base a new worktree on, plus the absolute
-  path of the repo root for reading.
+- Report the launch as `new-session` §4 says.
 - If a coordination signal exists: update it (status file / message)
   when the blocking work in this session finishes, so the waiting
   session can proceed.
@@ -322,66 +170,10 @@ between sessions. When a spawned session reports READY, relay that to
 the user and stop — what happens next is between the user and that
 session.
 
-## 4b. Reviving a closed session
+## 5. Reviving a closed session
 
-When a handed-off session's window is gone but its work is outstanding
-(unmerged branch, undelivered report), **resume the original session —
-never spawn a fresh one to re-learn the work.** The conversation state
-is the most valuable artifact a session leaves behind: the diagnosis
-details, the numbers, the half-made decisions all survive in it.
-
-- Resume with the same agent that owns the session. For direct Codex, use
-  `codex resume <window-slug>`; for sandboxed Codex, find the recorded profile
-  in `docs/do_not_commit/handoff-sessions.log` and run
-  `codex-sbx <recorded-profile> resume <window-slug>` from the same repo root.
-  For Claude Code, find the UUID in
-  `docs/do_not_commit/handoff-sessions.log`. Use `claude --resume <uuid>`
-  for a direct session, or use
-  `claude-sbx <recorded-profile> --resume <uuid>` from the same repo root
-  for a sandboxed session. For older unnamed sessions, use that agent's
-  resume picker and match the first user message against the spawn prompt;
-  keyword grep is too noisy because many sessions mention the same docs.
-- Send a SHORT catch-up as the next message: only what changed since it
-  closed (how far main moved, what landed that overlaps, what to do
-  now). It needs the delta, not a reconstruction.
-- Before resuming, verify its worktree is clean and no rebase is in
-  flight — a fresh session poking the same worktree first can leave
-  both confused.
-- Use the selected agent's fork command only for the rare case of
-  wanting a COPY of a session's context while leaving the original
-  resumable (`codex fork <uuid>` or Claude Code's `--fork-session`).
-
-## 5. Clean up once the branch has landed
-
-Tell the spawned session, in the prompt, that finishing includes
-cleaning up after itself — **unless the user has said work continues on
-that branch**, in which case leave everything in place and say so.
-Otherwise a session's leftovers outlive it: a stale worktree, a merged
-branch, and scratch databases nobody can attribute months later.
-
-After the merge is confirmed landed (the branch is an ancestor of the
-trunk, or, after a squash or rebase merge, its PR shows merged — not
-merely "the merger accepted"):
-
-- **Remove the worktree**, run from the repo root, never from inside the
-  worktree being removed: `git -C <repo root> worktree remove <path>`,
-  then `git -C <repo root> worktree prune`. If the filesystem leaves a
-  half-removed directory (this happens on Windows-mounted paths), fix it
-  before moving on rather than leaving an unusable entry behind.
-- **Delete the branch** with `git -C <repo root> branch -d <branch>` —
-  lowercase `-d`, which refuses when commits are unmerged and is
-  therefore the safety check, not a formality. If it refuses,
-  something did not land: investigate, never reach for `-D` — except
-  after a squash or rebase merge, which `-d` cannot see: confirm the
-  merged PR's head is this branch's tip, then use `-D`.
-- **Drop the scratch databases and fixtures the branch created.** Test
-  databases are often per-checkout and per-day, so one worktree can
-  leave several; list them by the naming scheme before dropping, and
-  drop only those belonging to this checkout — never a name you cannot
-  positively attribute.
-
-Report the cleanup in the recap: what was removed, and anything
-deliberately kept.
+Resume the original session as `new-session` §5 describes — never
+spawn a fresh one to re-learn the work.
 
 ## 6. Receiving a routed question
 
@@ -390,3 +182,4 @@ it.** A receiver who checks whether the question is even theirs, with
 evidence, beats one who answers it well — an item routed as "a
 question about your subsystem" has turned out to be a test defect, and
 establishing that first is what made the fix small and correct.
+

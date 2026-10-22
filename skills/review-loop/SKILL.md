@@ -11,7 +11,7 @@ and then runs the same loop for every reviewer (§3).
 
 The owner of the change runs this loop: the session that implemented
 it; when a subagent built it, the session that dispatched the
-subagent; or the session that took ownership through a handoff. The
+subagent; or the separate session that built it, whether handed off with `handoff` or launched and led under `implement`. The
 owner makes the fixes, in the change's own worktree. The reviewer is
 read-only and never fixes anything.
 

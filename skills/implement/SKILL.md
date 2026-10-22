@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Implement an approved plan or design by first choosing how to execute it - in this session, in a subagent, in a handed-off session, across several sessions (optionally under a coordinator), or some other way - announcing the choice, then driving the result through review-loop. Use when a plan exists (from plan-upfront, a design doc, an issue, or the conversation) and the user has asked for it to be built.
+description: Implement an approved plan or design by first choosing how to execute it - in this session, in a subagent, in a separate session this one leads, across several sessions (optionally under a coordinator), or some other way - announcing the choice, then driving the result through review-loop. Use when a plan exists (from plan-upfront, a design doc, an issue, or the conversation) and the user has asked for it to be built.
 argument-hint: <plan path or description>
 ---
 
@@ -56,13 +56,13 @@ Then take the cheapest mode that fits. These are defaults, not rules.
 | --- | --- |
 | **This session** | Small or medium; context here matters; the user is steering here; room is left in context. |
 | **Subagent** | A bounded, self-contained piece that needs no steering from the user; or keeping this session's context free for review or coordination. Fork when this session's context matters; a fresh agent with a full brief when it does not. Several in parallel only when their files do not overlap. A subagent reports to this session, not the user, and cannot stop to ask the user. |
-| **Handoff** (`handoff` skill) | Long — hours or many commits; it must outlive this session; or a different CLI, model, or sandbox is wanted. |
-| **Several sessions** | The plan splits into streams that can run in parallel. Use the `coordinator` skill when the streams have ordering dependencies, phase gates, shared live resources, or a design someone must hold them to. Use plain parallel handoffs only when the streams are genuinely independent. |
+| **Separate session** (launched with `new-session`; this session leads it) | Long — hours or many commits; it must outlive this session; or a different CLI, model, or sandbox is wanted. |
+| **Several sessions** | The plan splits into streams that can run in parallel. Use the `coordinator` skill when the streams have ordering dependencies, phase gates, shared live resources, or a design someone must hold them to. Use plain parallel separate sessions only when the streams are genuinely independent. |
 | **Something else** | A step only the user can do (a login, a hardware action); a multi-agent workflow the user has explicitly opted into; a scheduled or cloud agent for work that must run later or elsewhere. Or no mode at all: the plan is not ready, and the right move is back to `plan-upfront`. |
 
-When this session and a handoff both fit, prefer this session if the
+When this session and a separate session both fit, prefer this session if the
 user is steering in this conversation and its remaining context will
-hold the whole build; otherwise hand off.
+hold the whole build; otherwise launch a separate session.
 
 Mixed modes are normal — this session builds the core change while a
 subagent writes test fixtures. Name each piece's mode.
@@ -90,7 +90,7 @@ Who does what depends on the mode:
 | Mode | Owns the change and runs `review-loop` | Design session's role |
 | --- | --- | --- |
 | This session or a subagent | This session | The plan check is §4's verify step. This session is not independent of its own work, so `review-loop` always uses at least one reviewer other than itself. |
-| Handoff, or several sessions without a coordinator | The implementing session, on its own branch | Checks the first ready branch against the plan, before the independent review starts, so the reviewer does not spend rounds on work that misses the plan. Then a short sign-off on the final branch: only what changed since its check, and only where it touches the plan's decisions. |
+| Separate session, or several sessions without a coordinator | The implementing session, on its own branch | Checks the first ready branch against the plan, before the independent review starts, so the reviewer does not spend rounds on work that misses the plan. Then a short sign-off on the final branch: only what changed since its check, and only where it touches the plan's decisions. |
 | Under a coordinator | Each implementing session, on its own stream | The coordinator's own review is this role. |
 | The design session has closed | Unchanged | The plan file stands in: `review-loop`'s reviewer is told to check the change against it as well. |
 
@@ -100,8 +100,7 @@ Rules that hold in every mode:
 
 - **Every build happens in a worktree of its own**, created before
   the first edit by whoever builds — or, for a subagent, by this
-  session for that subagent alone; `handoff`'s sizing section has the
-  rules,
+  session for that subagent alone; `new-session` §2 has the rules,
   including which commit to base it on. Never build in the repo root,
   in a worktree someone else is building in, or in another live
   session's worktree. Other sessions may land on the branch this
@@ -124,7 +123,7 @@ Rules that hold in every mode:
 - **The agent instructions bind everyone.** Implementers and
   reviewers alike follow the repository's agent instructions (its
   AGENTS.md, CLAUDE.md or equivalent) and the user's global ones.
-  Every brief — subagent, handoff, reviewer — names those files by
+  Every brief — subagent, separate session, reviewer — names those files by
   path and says they bind: a session in another CLI loads that CLI's
   global file, not this one's.
 
@@ -139,7 +138,12 @@ Per mode:
   skipped, the decisions it made that belong on the decisions list
   (§5), and its escalations, with the work that depends on them left
   unbuilt). Review is §4's job, not the subagent's.
-- **Handoff**: follow `handoff`, and write these into the prompt:
+- **Separate session**: launch it with `new-session`. This is not a
+  `handoff`: the new session owns its branch, but this session keeps
+  leading — it holds the plan, receives escalations, and gates the
+  merge — and the prompt below says so. The two sessions communicate, so the prompt tells the
+  new session to load `session-message` (`new-session` §1). Write these
+  into the prompt as well:
   - The plan is approved: read the plan file and build it yourself, in
     your own worktree. Do NOT re-plan with `plan-upfront`, and do not
     choose an execution mode again. Before `review-loop`, verify the
@@ -147,26 +151,25 @@ Per mode:
   - Escalations come here, not to the user, as `implement` §3's
     "Decide or escalate" describes: send each one as it arises, then
     build what does not depend on it; this session batches them for
-    the user, even when the user also talks to you directly. This
-    replaces `handoff`'s default of asking the user directly.
+    the user, even when the user also talks to you directly.
   - The continuing role this session keeps, by name: it answers design
     questions, checks the first ready branch against the plan, signs
     off on the final one, and closes the new session's window once
-    its branch has landed (§6). Ask the new session to send its first
+    its branch has landed (`implement` §6). Ask the new session to send its first
     ready branch here before starting `review-loop`, the final
     branch when the loop ends together with the decisions it made
     that belong on the decisions list (§5), and, after its branch has landed and
-    its cleanup is done, a copy of the recap it gave the user. Without this assignment `handoff`'s
-    default applies and this session would stay out.
+    its cleanup is done, a copy of the recap it gave the user.
   - The new session owns everything else: running `review-loop` on its
     own change, the merge, and its recap to the user. It merges only
     after this session reports that the decisions list holds no major
     decisions without an alternative, or relays the user's approval of them (§5); a draft PR
-    need not wait.
+    need not wait. Once its branch lands, it cleans up as
+    `new-session` §6 describes.
 - **Several sessions**: one brief per stream, each with its own branch
   and worktree and the merge order between streams written into it.
   Under `coordinator`, this session takes that role from here. Without
-  it, each stream is a handoff as above.
+  it, each stream is a separate session as above.
 
 ### Decide or escalate
 
@@ -175,7 +178,7 @@ session, in every mode (under `coordinator`, as the coordinator).
 Implementing sessions and subagents send their escalations to it, not
 to the user. It answers what the plan already settles and batches the
 rest, across every stream, for the user — also when the user steers
-a handed-off session directly.
+a separate session directly.
 
 Every decision made during the build or the review falls on one side
 of this line:
@@ -238,14 +241,14 @@ not what was reported:
 
 Then run `review-loop` on the pinned change (base and tip commit IDs),
 with the plan path and anything a
-reviewer must know that the plan does not say. For a handoff or several sessions, each implementing
+reviewer must know that the plan does not say. For a separate session or several sessions, each implementing
 session does this for itself.
 
 ## 5. Report
 
 Tell the user: the mode used and why; the branch and commits; the
 verification numbers; and the review outcome from `review-loop`
-(level, reviewer, rounds, what was fixed, what was left and why). In a handoff or several sessions, each
+(level, reviewer, rounds, what was fixed, what was left and why). In a separate session or several sessions, each
 implementing session sends that recap for its own change; this session
 reports the mode it chose and the result of its plan check and
 sign-off.
@@ -258,7 +261,7 @@ else was viable, and why. List the major decisions without an
 alternative first, then the minor tradeoffs. Review findings
 answered by adding complexity, and fixes declined as
 overengineering, go in whichever group fits. Leave out what the plan itself decided and
-mechanical choices. In a handoff or several sessions, compile it from
+mechanical choices. In a separate session or several sessions, compile it from
 the decisions each session sent with its final branch and from this
 session's own rulings. List the escalations the user already answered
 separately, with their answers.
@@ -287,17 +290,17 @@ shows merged after a squash or rebase merge), and unless
 the user has said work continues on it:
 
 - **Built by this session or a subagent**: this session cleans up as
-  `handoff` §5 describes: it removes the worktree, deletes the branch,
+  `new-session` §6 describes: it removes the worktree, deletes the branch,
   and drops the scratch databases and fixtures the build created.
-- **Built by a handed-off session**: that session cleans up its own
-  worktree and branch, as `handoff` §5 tells it to. This session then
+- **Built by a separate session**: that session cleans up its own
+  worktree and branch, as `new-session` §6 describes. This session then
   closes the window it spawned, once the branch has landed, its
   worktree and branch are both gone, and the copy of its recap has
   arrived here — checked against the trunk, `git worktree list` and
   `git branch --list <branch>`, not against the session's own
   summary.
 - **Under a coordinator**: each implementing session cleans up as
-  `handoff` §5 tells it to; the coordinator verifies that cleanup and
+  `new-session` §6 describes; the coordinator verifies that cleanup and
   closes windows as its own skill says.
 
 Then tell the user what was removed, what was closed, and what was
