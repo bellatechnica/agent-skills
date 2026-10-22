@@ -1,6 +1,6 @@
 ---
 name: coordinator
-description: Run this session as the standing coordinator of a multi-session workstream - personally author its designs, execution plans, and status record; dispatch implementation to implementing sessions; review each phase as the design session of review-loop; authorize draft PRs (or merges, when the user allows them); coordinate shared resources across sessions; rule on defects mechanism-first; and escalate to the user by decision type. Use when the user assigns coordination of parallel implementing sessions toward an approved design.
+description: Run this session as the standing coordinator of a multi-session workstream - personally author its designs, execution plans, and status record; dispatch implementation to implementing sessions; review each phase as the design session of review-loop; authorize draft PRs (or merges, when the user allows them); coordinate shared resources across sessions; rule on defects mechanism-first; and escalate to the user the major decisions that have a real alternative. Use when the user assigns coordination of parallel implementing sessions toward an approved design.
 ---
 
 # Coordinate a multi-session workstream
@@ -55,7 +55,7 @@ a genuine decision.
 
 Keep one short status file in the main checkout's `do_not_commit/`,
 holding only what a resumed coordinator needs after a compaction or
-restart: each stream's phase and state (dispatched, in review, draft PR or reported
+restart: each stream's phase and state (dispatched, in review, awaiting approval of major decisions, draft PR or reported
 ready, merge authorized, landed, closed); the session, window, worktree and branch for each;
 open items with their owner; rulings, one dated line each — the
 ruling itself when it fits in a line, otherwise a pointer to the design
@@ -102,11 +102,16 @@ list of other people's mistakes.
 Per work item: own session (fresh context), own worktree, own scratch
 databases, a handoff that carries SPEC POINTERS (the design and the
 execution plan, wherever they are tracked, are the contract; the
-handoff holds only the breakdown), the known traps by name, and the
+handoff holds only the breakdown), the repository's and the user's
+global agent instructions by path, the known traps by name, and the
 reporting channel. See the `handoff` skill for mechanics. The handoff
 prompt states the coordinator's continuing role: the session sends its
 tips to the coordinator for phase review as `review-loop` describes,
-and publishes or merges only on the coordinator's authorization. Coordinator-specific rules:
+each with the decisions it made that belong on the decisions list
+(`implement` §5); sends each escalation to the coordinator as it
+arises rather than to the user, for the coordinator to batch as
+`implement` §3's "Decide or escalate" describes; and publishes or merges only on the coordinator's
+authorization. Coordinator-specific rules:
 
 - **Handoffs carry traps for recovery speed, not just prevention.** A
   trap named verbatim in the handoff may still fire; its value is
@@ -128,7 +133,9 @@ and publishes or merges only on the coordinator's authorization. Coordinator-spe
     refuse to publish without an authorization that originates with
     the user.
   - Only when the user's instruction allows merging ("you may merge
-    when clean" or similar) does a clean phase review authorize the
+    when clean" or similar) and the user has approved any major
+    decisions without an alternative on the phase's decisions list
+    (§3, `implement` §5) does a clean phase review authorize the
     merge: submitted to the repo's merger session where one exists;
     otherwise the implementing session rebases onto the trunk, runs the
     full suite once, and fast-forwards the trunk (`--ff-only`) itself.
@@ -139,11 +146,13 @@ and publishes or merges only on the coordinator's authorization. Coordinator-spe
   - In a repository without pull requests, a clean phase review
     without merge permission leaves the branch reported ready to the
     user, and the coordinator proceeds to the next phase.
-- **Designs and amendments.** MAJOR DESIGNS and MAJOR AMENDMENTS
-  always go to the user per artifact: show the resulting text and get
-  their word before amending the design in place. When unsure whether
-  an amendment is major, ask. A change merely aligning a design with
-  an already-approved decision is amended in place without asking.
+- **Designs and amendments.** MAJOR DESIGNS always go to the user
+  per artifact: show the resulting text and get their word. A major
+  amendment with a real alternative goes in the batched round
+  as `implement` §3 describes. An
+  amendment with one clear answer, or one merely aligning a design
+  with an already-approved decision, is made in place; the first kind
+  goes on the decisions list with a pointer to the amended section.
 - **Later phases do not wait for earlier ones to merge.** A later
   phase starts from the trunk, or from an earlier phase's branch when
   it cannot build without that phase's unlanded commits (`handoff`
@@ -165,6 +174,14 @@ against its stream's part of the execution plan,
 replaces the first-tip check and the sign-off, and comes once the
 stream's loop has met its level unless the dispatch brief asks for an
 earlier look.
+
+When a phase review is clean, give the user that phase's decisions
+list, as `implement` §5 describes it: the coordinator's rulings and
+the implementers' decisions it accepted, compiled from the status file
+and from the decisions each session sent with its tip. When the
+list holds major decisions without an alternative, the phase merges only after the user
+approves them, as `implement` §5 describes; a draft PR and the next
+phase need not wait for it.
 
 Do not re-run the test suite on handed-off work: the merge gate — the
 merger session, the PR's CI, or, without either, the implementing
@@ -190,11 +207,11 @@ affected session.
   diagnosis regularly flips who fixes it, where, or whether anything
   is broken — a "defect" can be a carve-out working as designed, and
   a "pass" can be an instrument too blind to fail.
-- Escalate to the user by decision TYPE, never by size: spend,
-  product-visible behavior, the user's personal setup and reference
-  data, anything revising a committed decision, and any cap. Rule
-  yourself on design-conformance and mechanics. One question to the
-  user is cheap; an unwanted decision is not.
+- Escalate decisions to the user only as `implement` §3's "Decide or
+  escalate" sends them there — a major decision with a real
+  alternative — batched and timed as it describes. Rule
+  yourself on every other decision, and report it on the decisions
+  list as that section says. Stall escalation (§6) is separate.
 - Prefer prediction over disclaimer: if a surprise is knowable before
   the run, the plan lists it as an item; a disclaimer is the fallback
   only when prediction is genuinely not computable.
@@ -217,7 +234,9 @@ affected session.
   line per interval) so every poll actually re-invokes you. A draft
   PR, or a branch reported ready in a repository without pull
   requests, that is awaiting the user's merge is not in-flight work: a
-  watcher on its landing, or the user's message, is the wake. A poll
+  watcher on its landing, or the user's message, is the wake. Nor is
+  a phase awaiting the user's approval of the major decisions on its
+  decisions list: the user's message is the wake. A poll
   held as an intention silently dies with the turn, and an idle
   coordinator and an idle implementer look identical from outside.
   Re-arm it first thing on any resume that finds such work open. With

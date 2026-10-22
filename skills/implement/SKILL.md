@@ -56,7 +56,7 @@ Then take the cheapest mode that fits. These are defaults, not rules.
 | --- | --- |
 | **This session** | Small or medium; context here matters; the user is steering here; room is left in context. |
 | **Subagent** | A bounded, self-contained piece that needs no steering from the user; or keeping this session's context free for review or coordination. Fork when this session's context matters; a fresh agent with a full brief when it does not. Several in parallel only when their files do not overlap. A subagent reports to this session, not the user, and cannot stop to ask the user. |
-| **Handoff** (`handoff` skill) | Long — hours or many commits; the user will steer it directly in its own session; it must outlive this session; or a different CLI, model, or sandbox is wanted. |
+| **Handoff** (`handoff` skill) | Long — hours or many commits; it must outlive this session; or a different CLI, model, or sandbox is wanted. |
 | **Several sessions** | The plan splits into streams that can run in parallel. Use the `coordinator` skill when the streams have ordering dependencies, phase gates, shared live resources, or a design someone must hold them to. Use plain parallel handoffs only when the streams are genuinely independent. |
 | **Something else** | A step only the user can do (a login, a hardware action); a multi-agent workflow the user has explicitly opted into; a scheduled or cloud agent for work that must run later or elsewhere. Or no mode at all: the plan is not ready, and the right move is back to `plan-upfront`. |
 
@@ -121,6 +121,12 @@ Rules that hold in every mode:
   implements it.
 - **Run targeted tests while iterating**; the full suite belongs to
   the merge gate.
+- **The agent instructions bind everyone.** Implementers and
+  reviewers alike follow the repository's agent instructions (its
+  AGENTS.md, CLAUDE.md or equivalent) and the user's global ones.
+  Every brief — subagent, handoff, reviewer — names those files by
+  path and says they bind: a session in another CLI loads that CLI's
+  global file, not this one's.
 
 Per mode:
 
@@ -130,26 +136,87 @@ Per mode:
   own new worktree on (or a worktree created for it alone — never this
   session's own worktree), what is in and out of scope, the verification list, and what to
   return (its worktree path, branch, commits, checks run with their numbers, anything
-  skipped). Review is §4's job, not the subagent's.
+  skipped, the decisions it made that belong on the decisions list
+  (§5), and its escalations, with the work that depends on them left
+  unbuilt). Review is §4's job, not the subagent's.
 - **Handoff**: follow `handoff`, and write these into the prompt:
   - The plan is approved: read the plan file and build it yourself, in
     your own worktree. Do NOT re-plan with `plan-upfront`, and do not
     choose an execution mode again. Before `review-loop`, verify the
     built result as `implement` §4 describes.
+  - Escalations come here, not to the user, as `implement` §3's
+    "Decide or escalate" describes: send each one as it arises, then
+    build what does not depend on it; this session batches them for
+    the user, even when the user also talks to you directly. This
+    replaces `handoff`'s default of asking the user directly.
   - The continuing role this session keeps, by name: it answers design
     questions, checks the first ready branch against the plan, signs
     off on the final one, and closes the new session's window once
     its branch has landed (§6). Ask the new session to send its first
     ready branch here before starting `review-loop`, the final
-    branch when the loop ends, and, after its branch has landed and
+    branch when the loop ends together with the decisions it made
+    that belong on the decisions list (§5), and, after its branch has landed and
     its cleanup is done, a copy of the recap it gave the user. Without this assignment `handoff`'s
     default applies and this session would stay out.
   - The new session owns everything else: running `review-loop` on its
-    own change, the merge, and its recap to the user.
+    own change, the merge, and its recap to the user. It merges only
+    after this session reports that the decisions list holds no major
+    decisions without an alternative, or relays the user's approval of them (§5); a draft PR
+    need not wait.
 - **Several sessions**: one brief per stream, each with its own branch
   and worktree and the merge order between streams written into it.
   Under `coordinator`, this session takes that role from here. Without
   it, each stream is a handoff as above.
+
+### Decide or escalate
+
+The **leading session** holds the plan and speaks to the user: this
+session, in every mode (under `coordinator`, as the coordinator).
+Implementing sessions and subagents send their escalations to it, not
+to the user. It answers what the plan already settles and batches the
+rest, across every stream, for the user — also when the user steers
+a handed-off session directly.
+
+Every decision made during the build or the review falls on one side
+of this line:
+
+- **Escalate to the user** only a major decision with a real
+  alternative: at least two viable options that give up different
+  things the user would weigh. A decision is major when it changes
+  the plan or design — adding, dropping, or reshaping a plan item, or
+  reversing a decision the plan, a committed design, or the user has
+  recorded — or when it touches product-visible behaviour, spend,
+  safety or reversibility, performance the plan relied on, the user's
+  personal setup or reference data, or complexity the plan did not
+  budget for.
+- **Decide and keep going** on everything else. Report on the
+  decisions list (§5) a major decision with one clear answer — no
+  alternative the user would plausibly pick instead, such as a plan
+  item whose stated approach cannot work, where one replacement is
+  clearly right — and a minor tradeoff. A minor decision with one
+  clear answer needs no report.
+
+Escalations are batched, the way `plan-upfront` batches its
+questions:
+
+- Do not stop at the first one. Record it, leave the work that
+  depends on it unbuilt — never settle the question by building one
+  side — and carry on with everything that does not depend on it.
+- Ask when any one stream has no independent work left, or its
+  review has met its level apart from the open escalations: send
+  every escalation open at that moment, across all streams, in one
+  round. Give each its options, the recommended one first, and what it
+  changes in the plan — for a design amendment, the resulting text of
+  the recommended option, and of any other option whose text the user
+  could not infer from its one-line description, so the answer
+  approves the amendment too.
+  Aim for one round per plan. A later round only for questions that
+  arose after the previous round went out, or that its answers
+  created; never hold a question back to avoid one.
+- Ask an escalation at once, unbatched, only when waiting would
+  waste the work: most of the remaining work depends on its answer,
+  or the plan's premise has turned out false in a way that leaves
+  more than one way forward.
 
 ## 4. Verify, then review
 
@@ -163,25 +230,48 @@ not what was reported:
   base this session chose).
 - The diff covers every plan item assigned to this branch (the whole
   plan, unless a stream or piece brief narrowed it) and nothing outside
-  that assignment; any departure is justified in a commit message or
-  raised now.
+  that assignment; an item left unbuilt for an open escalation is
+  listed with it, and any other departure is justified in a commit
+  message or raised now.
 - The verification list was run, with numbers that match the stated
   expectations. A missing number is a gap, not a pass.
 
 Then run `review-loop` on the pinned change (base and tip commit IDs),
-with the plan path and anything a reviewer must know that the plan
-does not say. For a handoff or several sessions, each implementing
+with the plan path and anything a
+reviewer must know that the plan does not say. For a handoff or several sessions, each implementing
 session does this for itself.
 
 ## 5. Report
 
 Tell the user: the mode used and why; the branch and commits; the
-verification numbers; the review outcome from `review-loop` (level,
-reviewer, rounds, what was fixed, what was left and why); and any
-departure from the plan. In a handoff or several sessions, each
+verification numbers; and the review outcome from `review-loop`
+(level, reviewer, rounds, what was fixed, what was left and why). In a handoff or several sessions, each
 implementing session sends that recap for its own change; this session
 reports the mode it chose and the result of its plan check and
-sign-off. Do not merge or publish without an
+sign-off.
+
+Once the change is clean — `review-loop` has met its level and any
+sign-off has passed — the leading session (§3) also gives the user
+**the decisions list**: the decisions §3 says to report, made by itself or by an implementer it accepted,
+one line each saying what was decided, what it beat or why nothing
+else was viable, and why. List the major decisions without an
+alternative first, then the minor tradeoffs. Review findings
+answered by adding complexity, and fixes declined as
+overengineering, go in whichever group fits. Leave out what the plan itself decided and
+mechanical choices. In a handoff or several sessions, compile it from
+the decisions each session sent with its final branch and from this
+session's own rulings. List the escalations the user already answered
+separately, with their answers.
+
+When the list holds major decisions without an alternative, the user
+approves them before the change merges. Nothing else on the list
+holds the merge: the escalations the user already answered need no
+second approval, and the minor tradeoffs are for information. A standing merge permission given earlier ("merge when clean")
+does not cover major decisions the user has not yet seen. Work that merges nothing —
+a draft PR, the next phase, the next session — need not wait for the
+approval.
+
+Do not merge or publish without an
 authorization that originates with the user, given directly or
 relayed (including a coordinator authorizing a draft PR under the user's
 assignment of the workstream, or relaying the user's merge

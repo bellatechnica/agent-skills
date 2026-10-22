@@ -27,6 +27,12 @@ read-only and never fixes anything.
   design it implements, by path or published link, the user's review
   criteria, and the decisions a reviewer would
   otherwise re-litigate (rejected alternatives, deliberate trade-offs).
+- Name the repository's agent instructions (AGENTS.md, CLAUDE.md or
+  equivalent) and the user's global ones by path. The change is held
+  to them as well as to the plan, and the reviewer follows them too —
+  a reviewer in another CLI does not load this CLI's global file on
+  its own. Ask the reviewer to report complexity the plan does not
+  call for as a finding, alongside defects.
 - **The design session.** Where the change implements a plan held by
   a session other than the owner, that design session checks the
   first ready tip against the plan before round one, and signs off on
@@ -120,19 +126,55 @@ Each round:
      preference, out of scope. One-line reason.
    - **Defer** — real and worth doing, but not in this change. Record
      where it is tracked and tell the user.
+   - **Escalate** — a major decision with a real alternative, as
+     `implement` §3's "Decide or escalate" defines it; a major
+     decision with one clear answer, or a minor tradeoff, is decided
+     and reported instead. Do not decide it by implementing one side: leave the work
+     that depends on it alone and carry on with the rest. Send it as it
+     arises to the leading session when `implement` or `coordinator`
+     assigned the work, which answers what the plan settles and batches
+     the rest for the user. Otherwise — no such assignment — hold it
+     for the batched round to the user that `implement` §3 describes.
+     Answers that
+     call for changes make a new tip, reviewed like any fix.
 
    At the fully-clean level, a decline or a deferral needs the
    reviewer's agreement (given the same way as a dispute ruling) or
    the user's.
-   - **Escalate** — a product or design decision. Ask the user (or the
-     design session, for a question the plan should have settled); do
-     not decide it by implementing one side.
+
+   **A fix that adds complexity gets a second look before it is
+   made.** A correct finding does not oblige the fix the reviewer
+   proposed, or any fix that grows the change. Before making one, ask:
+   - Is it overengineering — a new option, mode, abstraction or
+     setting nobody asked for, or handling for a case the plan ruled
+     out or that cannot occur by construction?
+   - Is the fix larger than the defect, or in the wrong layer —
+     patched at each call site when one change upstream removes the
+     whole class?
+   - Would removing or narrowing code fix it more simply — dropping
+     the feature that carries the defect rather than defending it?
+   - Is there a major tradeoff behind it — correctness here bought
+     with simplicity, performance, reversibility, or behaviour the
+     plan relied on — with another option the user might prefer? Does
+     it change what the plan says? If so and there is one clear
+     answer, fix it and report it.
+
+   Prefer the smallest fix that closes the defect: decline a proposed
+   fix that is overengineering, and close the defect some smaller way.
+   A finding about a case that cannot occur, or that the plan ruled
+   out, is a Dispute, with the construction or the plan section as
+   evidence. A fix that is a major decision with a real alternative is an
+   Escalate, not a Fix. Each round adding another special case is the
+   round-shape warning below. Note every finding
+   answered by adding complexity or by refusing it, for the report.
 3. **Re-pin** the new tip and check §1's level. A result about an older
    tip, or reviewed under different criteria, is stale: re-run it. The
    one exception is the one-pass level, where the owner's own check of
    a trivial fix lets the round's result stand for the new tip.
 
-The level is met only by the independent reviewer's latest round,
+The level is met only once every escalation is answered and the
+work it called for has been reviewed, and only by the independent
+reviewer's latest round,
 except where §2's one-pass exception makes the design session the
 single pass. A fix prompted by the design session's final sign-off
 makes a new tip: handle it as §1's level handles any fix — at one pass
@@ -154,7 +196,9 @@ Tell the user, in this order: whether the stop level was met, and if
 not, why the loop stopped; the level and the circumstances that set
 it; the reviewer, with any switch and its reason; the final pinned
 commit IDs; what was fixed; what was declined, deferred, or escalated,
-each with its one-line reason; and residual risk — what no reviewer
+each with its one-line reason; the findings answered by adding or by
+refusing complexity, for the decisions list `implement` §5 asks of the
+leading session; and residual risk — what no reviewer
 examined. Close any persistent reviewer session as `review-session`
 directs. Do not merge or publish without an authorization that
 originates with the user, given directly or relayed (including a coordinator authorizing a draft PR under the user's
