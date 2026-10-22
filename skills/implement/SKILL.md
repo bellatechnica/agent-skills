@@ -278,7 +278,8 @@ approval.
 ### Landing
 
 The same rule holds in every mode. The owner of the change (§2) lands
-it. In a separate session or several sessions, the owner acts on this
+it, following any merge and publishing rules in the repository's and
+the user's agent instructions. In a separate session or several sessions, the owner acts on this
 session's word (under `coordinator`, the coordinator's): once the
 change is clean, this session sends it which case below applies and,
 for a merge, the user's merge instruction verbatim. **Clean** here means `review-loop` has met its
