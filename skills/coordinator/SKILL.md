@@ -114,11 +114,6 @@ arises rather than to the user, for the coordinator to batch as
 `implement` §3's "Decide or escalate" describes; and publishes or merges only on the coordinator's
 authorization. Coordinator-specific rules:
 
-- **Handoffs carry traps for recovery speed, not just prevention.** A
-  trap named verbatim in the handoff may still fire; its value is
-  that the victim recognizes it instantly, reports before anything
-  else, and captures the drift as a patch. Demand exactly that
-  incident shape in the prompt.
 - **A self-checkable start gate** when the item depends on another
   stream: state the condition as a command the session runs itself
   (for example, "the branch I base on has passed phase review" read

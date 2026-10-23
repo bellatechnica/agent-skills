@@ -118,6 +118,10 @@ The prompt also carries:
   touch the live DB until the doc's Coordination condition holds") —
   don't rely on the session reading the doc carefully enough.
   Unconstrained handoffs omit this.
+- When the handoff names known traps, doc or prompt: a named trap may
+  still fire. Tell the session that if one does, it reports it to the
+  sender before anything else and saves what the trap changed in its
+  work as a patch, so the change can be inspected and undone.
 - Tell the session how to involve the user:
   - **Larger features** (or whenever the user asked for a plan), unless
     the handoff already carries a plan the user approved: refine
