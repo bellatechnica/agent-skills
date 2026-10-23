@@ -167,6 +167,10 @@ Per mode:
     session reports that the decisions list holds no major decisions
     without an alternative, or relays the user's approval of them. Once its branch lands, it cleans up as
     `new-session` §6 describes.
+
+  After launch, while the new session owes this session a ready
+  branch, its final branch, or the recap copy, this session watches it
+  as `new-session` §7 describes.
 - **Several sessions**: one brief per stream, each with its own branch
   and worktree and the merge order between streams written into it.
   Under `coordinator`, this session takes that role from here. Without

@@ -1,6 +1,6 @@
 ---
 name: new-session
-description: Launch a new agent session in its own tmux window - choose the agent CLI and model (the same as this session's unless the user names another, through codex-sbx or claude-sbx when Docker Sandbox or a settings profile is requested), set up its message channel through session-message and tell it to load that skill when the two sessions will communicate, place it at the repo root or in its own new worktree on the right base commit, name it for resume, revive it after it closes, and clean up its worktree and branch once its work has landed. Use whenever a workflow starts a separate session (handoff, implement, review-session, and others); the calling workflow decides the task and who owns it.
+description: Launch a new agent session in its own tmux window - choose the agent CLI and model (the same as this session's unless the user names another, through codex-sbx or claude-sbx when Docker Sandbox or a settings profile is requested), set up its message channel through session-message and tell it to load that skill when the two sessions will communicate, place it at the repo root or in its own new worktree on the right base commit, name it for resume, revive it after it closes, and clean up its worktree and branch once its work has landed, and watch it for stalls while waiting on it. Use whenever a workflow starts a separate session (handoff, implement, review-session, and others); the calling workflow decides the task and who owns it.
 ---
 
 # Launch a new session
@@ -266,3 +266,45 @@ merely "the merger accepted"):
 
 Report the cleanup in the recap: what was removed, and anything
 deliberately kept.
+
+## 7. Watch a session you wait on
+
+Use this when the calling workflow says to: this session is waiting on
+something the new session owes it — a ready branch, an escalation, a
+review result, a deliverable. A message listener or a completion
+watcher does not make the watch unnecessary: a stalled session sends
+nothing, so neither ever fires. A session that only reports to the user
+needs no watch.
+
+- Two channels, never confused: EVENT watchers (a landing, a run exit,
+  a message arriving) re-invoke this session when something completes;
+  a LIVENESS poll catches stalls the events will never
+  report. On each poll, capture the session's screen, judge progress
+  against its last report, and intervene only on stall or error.
+- **The poll is ARMED, not intended — and gated on in-flight work.**
+  While any watched session owes something, keep one persistent
+  heartbeat running that actually re-invokes this session; each tick
+  checks every session it watches. Use the client's own mechanism: in
+  Claude Code, a Monitor emitting one line about every 30 minutes; in
+  Codex, the `wait_agent` timeout that `agent-relay-message`'s Codex
+  rule sets is the tick. Where the client has no mechanism that
+  re-invokes this session — Codex in direct mode, with no Relay
+  listener to wait on — tell the user the watch is not armed. A poll
+  held as an intention silently dies with the turn, and an idle waiter
+  and an idle worker look identical from outside. Re-arm it first
+  thing on any resume that finds such work open. Work waiting on the
+  user — a draft PR awaiting their merge, a branch reported ready to
+  them, decisions awaiting their approval — is not in flight: the user's message, or a watcher on the
+  landing, is the wake. With NOTHING in flight, STOP the tick; a poll
+  that only re-reads unchanged state is noise in the operator's
+  terminal.
+- On a stall, before waking the session, check whether the
+  deliverable already EXISTS unrelayed — in the main checkout's
+  `do_not_commit/` area or as commits on the session's branch:
+  sessions repeatedly finish the artifact, idle, and never send the
+  message. The fix is to read the file and proceed, not to ask for it
+  again. Judge by the artifact, not by the session's own summary: a
+  pane that reads idle can hold an approved branch it never submitted.
+- **Escalation ladder per deliverable: wake once; on a second stall
+  of the SAME deliverable, tell the user instead of waking a third
+  time.** A session that stalls twice on one item will stall a third.

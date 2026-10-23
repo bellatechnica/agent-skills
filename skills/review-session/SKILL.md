@@ -33,6 +33,6 @@ rounds.
 
 ## Keep and close the session
 
-Keep the reviewer process alive between rounds and its Relay listener active in Relay mode. If it exits while work remains, resume **that session** using its recorded identity, as `new-session` §5 describes; do not start a fresh reviewer and lose its findings. Keep the invoking session's listener active in Relay mode as `session-message` requires. A genuine blocker can pause fixes, but the reviewer remains available and the user sees the blocker.
+Keep the reviewer process alive between rounds and its Relay listener active in Relay mode. While a round is out, watch the reviewer as `new-session` §7 describes. If it exits while work remains, resume **that session** using its recorded identity, as `new-session` §5 describes; do not start a fresh reviewer and lose its findings. Keep the invoking session's listener active in Relay mode as `session-message` requires. A genuine blocker can pause fixes, but the reviewer remains available and the user sees the blocker.
 
 Once the latest target is clean, send a close request through the selected channel naming the clean round and commit IDs. The reviewer replies that its result is final and it is ready to close, acknowledging the request only then in Relay mode. Verify the reply and the pinned tmux window identity before closing that window; remove only the reviewer's own temporary worktree or scratch artifacts. If the reviewer exits itself, verify its window is gone. Report the clean target, review scope, remaining test gaps, and that the reviewer session closed.
