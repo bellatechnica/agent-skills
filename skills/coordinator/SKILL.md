@@ -23,8 +23,7 @@ the authoritative documents in its own voice.
 
 Hand off implementation by default: code, tests, migrations, operational
 assets, and their verification. A document-only decision or planning task stays
-with the coordinator. This boundary preserves one continuous decision voice;
-parallel drafting speed is not worth fragmented or second-hand design.
+with the coordinator.
 
 Where each document goes:
 
@@ -87,15 +86,12 @@ predeclared instruments is NOT an escape — that is the instrument working,
 and it belongs in the status file; this record measures what the downstream nets
 catch that self-testing missed.
 
-Two entry kinds are worth more than the rest and are easy to skip. The
-first is an instrument that could not fail — a guard polling the wrong id
-space, a test asserting the defect its name disclaims, a zero from a
-switched-off collector; each of those reported health while the thing it
-watched was broken. The second is the coordinator's OWN escapes: a ruling
-that was imprecise, a number carried without its predicate, a bound set
-against the likely figure instead of the plan's ceiling. Writing your own
-in is what makes the record usable by the next coordinator rather than a
-list of other people's mistakes.
+Always record two entry kinds that are easy to skip: an instrument that
+could not fail (a guard polling the wrong id space, a test asserting the
+defect its name disclaims, a zero from a switched-off collector), and the
+coordinator's own escapes (an imprecise ruling, a number carried without
+its predicate, a bound set against the likely figure instead of the plan's
+ceiling).
 
 ## 2. Dispatch
 
@@ -227,16 +223,12 @@ scratch databases dropped only when positively attributable to that
 session. Then the status file records the close.
 
 **Ask "is any spawned session closeable?" on every liveness poll and at
-every phase close, not when the user asks.** The rule below is a reaction
-with no trigger otherwise, and a coordinator that only checks on request
-leaves retired sessions holding worktrees for days. The check pays twice:
-its usual answer is "close it", but the case that matters is the session
-that looks finished and is actually STUCK — one held an approved branch it
-had never submitted, and before that a written deliverable it had never
-relayed, both while its pane read idle. Verify against artifacts (has the
-branch landed — ancestry, or its merged PR after a squash or rebase
-merge — does the document exist on disk) rather than
-against the session's own summary, and where the two disagree, the artifact
+every phase close, not only when the user asks.** A session that looks
+finished may be stuck, holding an approved branch it never submitted or a
+deliverable it never relayed while its pane reads idle. Verify against
+artifacts (has the branch landed — ancestry, or its merged PR after a
+squash or rebase merge — does the document exist on disk) rather than
+against the session's own summary; where the two disagree, the artifact
 wins and the session stays open until it agrees.
 
 Close coordinator-spawned sessions when their ownership is complete or a

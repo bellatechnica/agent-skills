@@ -1,4 +1,5 @@
-# Deny by default, then re-include only the skills that are shared.
+# Deny by default, then re-include only the skills that are shared, plus the
+# committed docs that describe them.
 #
 # Two rules make this work, and breaking either one silently breaks the file:
 #
@@ -20,6 +21,7 @@
 !/LICENSE
 !/README.md
 !/bin/
+!/docs/
 !/skills/
 /skills/*
 

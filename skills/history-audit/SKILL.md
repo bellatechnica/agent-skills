@@ -64,82 +64,40 @@ found.
   tail-trim or a whole-repo operation — an early commit means nearly
   every later commit gets a new hash.
 
-### 3. Widen past the named term — sweep every category below, every time
+### 3. Widen past the named term — sweep every `never-commit` class, every time
 
-**The classes themselves live in the `never-commit` skill**, with the
-usual false positive for each; what follows is this audit's detection
-method over a whole history rather than a single diff. Read that list
-alongside this section — if the two ever disagree about what counts,
-`never-commit` is the definition and this is the search. The same list
-is the gate before a change lands, applied by whoever lands it, which
-is where these are cheap to catch; every finding here is one that got
-past it.
+Load the `never-commit` skill and read it before this step. It defines
+the classes, their signals and their usual false positives; if it and
+this section ever disagree about what counts, `never-commit` is the
+definition and this is the search.
 
-**Credentials** — tracked files and `git log --all -S/-G`: `sk-`,
-`AKIA`, `ghp_`, `gho_`, `xoxb-`, `xoxp-`, `AIza`, `-----BEGIN`,
-`api_key`, `secret_key`, `password=`, `.pgpass`, and a regex for
-credentials embedded in a connection-string URL
-(`scheme://user:pass@host`). Read every hit's diff — `api_key` almost
-always means the *name* of an env var (`api_key_env`), not a value;
-`sk-` collides with ordinary English ("a**sk-**the-scheduler",
-"**task-**pipeline") and with test placeholders (`sk-test`).
+For each class in `never-commit`, search tracked files (`git grep`) AND
+history (`git log --all -S/-G`) with its signals, and read every hit's
+diff past its false positive before classifying it. History-specific
+additions:
 
-**Personal identity** — personal email domains (gmail/yahoo/outlook/
-qq/163/etc.) in tracked files and history; any personal identifiers the
-project has previously named as sensitive (ask if none are known);
-**every commit's author/committer email across all refs**
-(`git log --all --format='%ae'`/`'%ce' | sort -u`), checked against the
-project's approved outbound identity — not just content greps, since a
-personal address can sit in git metadata with no tracked line ever
-mentioning it.
+- **Identity in commit metadata**: list every author AND committer
+  email across all refs (`git log --all --format='%ae%n%ce' | sort -u`)
+  and check each against the project's approved outbound identity; ask
+  if none is named. Search content for personal email domains (gmail,
+  yahoo, outlook, qq, 163 and the like), and ask for the project's
+  sensitive identifiers if none are known.
+- **Third-party account identifiers**: confirm they never reached
+  tracked files or history, even when they live in a gitignored local
+  directory.
+- **Fixtures**: flag long foreign-language or domain-specific text
+  blocks in test and fixture files, and hand an uncertain call to the
+  fixture's author.
+- **Absolute local paths**: report them even where the project's
+  convention for deployment-specific values covers them, after saying
+  what that convention implies.
+- **Hash citations**: sweep docstrings and comments too, not just docs.
+  Resolve each candidate with `git log -1 <hash>` (or
+  `git cat-file -t <hash>` for exact-length checks). Every resolvable
+  citation stops resolving after a rewrite and counts toward its price
+  (§5).
 
-**Internal network shape** — private IP ranges (`10.`, `192.168.`,
-`172.16-31.`, `127.`, `169.254.`), internal hostnames, machine-name
-patterns (e.g. `DESKTOP-*`). Read context before flagging: a
-private-IP-range check inside source is usually a defensive blocklist,
-not a leaked address.
-
-**Absolute local paths** — `/home/<user>/`, `/mnt/<drive>/`,
-`C:\Users\`, etc. Check whether the project already has a stated
-convention for where deployment-specific values belong (e.g. unit
-files vs. docs) before recommending a change — still worth reporting
-either way, but say what the existing convention implies first.
-
-**Vendor/product naming residue** — any name the product used to be
-called, or a third-party tool name embedded in comments, meta-key
-names, or config, beyond whatever term the requester already named.
-
-**Third-party account identifiers** — confirm they never reached
-tracked files even when they live in a gitignored local directory;
-check history too, not just the current tree.
-
-**Real content in fixtures** — scan test/fixture files for long
-foreign-language or domain-specific text blocks (flag runs over N
-characters). Judge synthetic-vs-scraped by construction — templated
-helper functions, role-labeled IDs like `unrelated-1` or `inject-1` —
-rather than by content alone, and hand an uncertain call to whoever
-wrote the fixture instead of deciding it unilaterally. This is a
-licensing question, not a secrets one.
-
-**`.gitignore` reality check** — confirm claimed-ignored paths were
-NEVER tracked, not just currently absent:
-`git log --all --full-history -- <path>` must return nothing. Confirm
-the ignore rule actually matches with `git check-ignore -v <path>`;
-don't infer it from the pattern text alone.
-
-**Hardcoded commit-hash citations** — grep tracked files (docs *and*
-code — this shows up in docstrings and comments, not just design docs)
-for standalone 7–40-char hex tokens:
-`git grep -noP '\b[0-9a-f]{7,40}\b'`, then resolve each candidate with
-`git log -1 <hash>` (or `git cat-file -t <hash>` for exact-length
-checks). A real, resolvable one is a direct rewrite cost — every such
-citation stops resolving after a rewrite — and it's easy to miss
-because the hash itself reads as inert. Projects with their own
-content-addressed IDs (fingerprints, run IDs, lease IDs) will produce
-false positives against the same regex; rule each one in or out
-individually by resolution and context, not by pattern length alone.
-
-### 3b. Two traps that make a search lie
+### 3b. Traps that make a search lie
 
 **A multi-word term can WRAP.** `git grep "<two words>"` misses the
 instance split across two source lines in prose, a docstring or a
@@ -165,9 +123,7 @@ dangling until re-anchored this way.
 ### 4. Document the negative, not just the positive
 
 For every "0 matches" / "clean" result, state the exact command used
-in the findings doc. A clean audit is only as trustworthy as its
-documented search surface — the next reader has to be able to re-run
-it, not take "checked" on faith.
+in the findings doc, so the next reader can re-run it.
 
 ### 5. Price a rewrite honestly before recommending one
 
@@ -193,11 +149,10 @@ listing both neutrally:
    insists after seeing the priced cost from §5. Coordinate through
    the project's standing merge/release process if it has one; never
    run it solo, and never as part of the same pass that's still
-   auditing. **Execution is its own procedure** — scoping the
-   rewrite, running it in an isolated clone, verifying it changed
-   exactly what was intended, carrying other branches forward,
-   confirming old content is actually gone. Don't improvise that
-   here; hand it off once the decision to rewrite is made.
+   auditing. **Execution is its own procedure** (scoping, an
+   isolated clone, verification, carrying other branches forward,
+   confirming old content is gone): hand it off once the decision to
+   rewrite is made, and don't improvise it here.
 
 ## Deliverable
 

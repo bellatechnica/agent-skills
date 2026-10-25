@@ -177,11 +177,9 @@ work it called for has been reviewed, and only by the independent
 reviewer's latest round,
 except where §2's one-pass exception makes the design session the
 single pass. A fix prompted by the design session's final sign-off
-makes a new tip: handle it as §1's level handles any fix — at one pass
-the owner checks it and only a non-trivial fix gets another round;
-above one pass, run another round. Report only after the sign-off
-passes. When the design session's plan check was the single pass,
-that check is also the sign-off.
+makes a new tip: handle it as step 3 handles any new tip. Report only
+after the sign-off passes. When the design session's plan check was the
+single pass, that check is also the sign-off.
 
 Impose no fixed round count, but watch the shape of the rounds. Real
 findings shrinking in severity round by round are a loop converging.

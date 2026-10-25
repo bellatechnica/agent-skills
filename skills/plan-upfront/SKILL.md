@@ -30,12 +30,9 @@ incremental caches.) If no — UI, prompt work, content surfaces — skip
 this section entirely; the trigger is the promises, not the size.
 
 If yes, the enumeration artifacts are PLAN DELIVERABLES, produced
-before implementation. Each costs about an afternoon and replaces weeks
-of incident-driven discovery; in one real project's replay, roughly
-three-quarters of the eventual acceptance cases were statable before
-any design existed, from the product pains alone — the rest are
-design-specific interactions that only review contact finds, so spend
-foresight here and save review depth for that residue.
+before implementation. Most acceptance cases are statable from the
+product pains alone, before any design exists; spend foresight here and
+save review depth for the design-specific residue.
 
 - **A behavioral acceptance list**, design-agnostic, written BEFORE a
   design is chosen — statable from the product pains and the cost
@@ -44,9 +41,8 @@ foresight here and save review depth for that residue.
   list — drawing forces the state × event enumeration prose skips.
 - **An interference matrix**: everything that writes × everything
   holding a plan or snapshot in flight, each cell naming its guard.
-- **A toy simulator** for protocol designs: ~100 lines over a
-  five-node example finds ordering-defect classes in an afternoon that
-  otherwise surface one production incident at a time.
+- **A toy simulator** for protocol designs: about 100 lines over a
+  five-node example, run against adversarial scenarios.
 - **A test-double fidelity review**, once per double: list the
   properties the double has that production lacks (determinism, speed,
   availability, zero cost) and ask which mechanisms silently depend on

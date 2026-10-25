@@ -65,7 +65,9 @@ on it.
 Agent CLIs that read a `skills/` directory of `SKILL.md` files can use these
 skills; Claude Code and Codex CLI both do. Each subdirectory of `skills/` is
 one skill: a `SKILL.md` with YAML frontmatter (`name`, `description`) plus
-whatever reference files and scripts it needs.
+whatever reference files and scripts it needs. Evidence behind a skill's
+design that an agent does not need in order to act, such as the observations
+behind `tmux-message`'s composer classifier, lives in `docs/`.
 
 ## Layout
 

@@ -215,6 +215,23 @@ def turn_service_tiers(handle) -> dict[str, set[str]]:
 
 
 def read_usage(root: Path, start: datetime, end: datetime):
+    """Return replay-safe per-sample token deltas inside [start, end].
+
+    - Records before a rollout file's first live turn_context are copied fork
+      history and are skipped.
+    - The current model, turn and working directory come from turn_context
+      events. Each delta carries its turn id, so turns are counted separately
+      from sampling calls.
+    - Deltas of the cumulative total_token_usage are used, not
+      last_token_usage, because compaction records can omit its component
+      split. last_token_usage is the fallback only for the first live sample
+      (no pre-window baseline) or a counter reset (a negative delta).
+    - A session already running at the cutoff gets its baseline from the last
+      cumulative sample before start.
+    - The active service tier carries forward until an explicit change. A
+      session's initial unmarked state is backfilled only when that turn has
+      exactly one explicit tier marker.
+    """
     events: list[dict] = []
     diagnostics = defaultdict(int)
     for path, handle in iter_jsonl(root):

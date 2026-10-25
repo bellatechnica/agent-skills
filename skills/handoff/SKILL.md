@@ -45,21 +45,11 @@ usually sorts them into folders by KIND — `handoffs/`, `findings/`,
 `designs/` — in which case the doc goes in the one for handoffs, e.g.
 `docs/do_not_commit/handoffs/handoff-2026-03-14-flaky-tests.md`. Where
 there are no folders, the top level is right. `ls` the directory and
-match what is there; a convention nobody follows decays at the speed
-people write, and the writer who has not looked is how it decays.
-(When such a directory is reorganised, sort every skill reference to
-it into POINTERS and DIRECTIVES — only directives matter: a stale
-pointer fails visibly the first time someone follows it, where a stale
-directive naming a flat write path keeps working and re-scatters the
-directory one obedient session at a time. A directive that names a
-folder produces a folder; one that names a flat filename produces a
-flat directory.)
+match what is there.
 
-The doc is best-effort context, not a self-sufficient brief. A session
-is not serializable, so polishing toward completeness costs the sender
-more than it returns — the receiver pauses and asks when it hits a
-real gap (section 2). Carry what the receiver could not reconstruct
-or think to ask about, and let the reply channel handle the rest.
+The doc is best-effort context, not a self-sufficient brief: carry what
+the receiver could not reconstruct or think to ask about, and leave the
+rest to the reply channel (section 2).
 
 - **Spec pointers, not spec**: the design and plan documents are the
   spec — committed files, files in the main checkout's `do_not_commit`
@@ -70,9 +60,7 @@ or think to ask about, and let the reply channel handle the rest.
   the main checkout's `do_not_commit` area, or published and cited by
   link — or state that none apply, and name them as candidates to rule
   in or out, not assertions ("plausibly relevant, not checked" is
-  honest and useful). The expensive failure this prevents: a receiver
-  recommending something a design forbids in as many words, undetected
-  because the brief looked complete.
+  honest and useful).
 - **Binding vs advisory, as two lists**: which requirements are defects
   if violated, and which are suggestions to override freely on finding
   something better. Undifferentiated, a receiver complies slavishly
@@ -91,10 +79,8 @@ or think to ask about, and let the reply channel handle the rest.
   condition (e.g. "no model_calls newer than 15 min", "status file
   updated"), and what is safe immediately (typically: code + offline
   tests on an isolated test database; own worktree). The section must
-  also name the coordination channel: both Agent Relay slugs by default, plus
-  both native recipient addresses when reachable and both recovery pane
-  addresses when the sessions share a tmux server; or both usable direct
-  addresses when Relay is unavailable.
+  also name the coordination channel and both sessions' addresses, as
+  `session-message` describes.
   Fully independent work needs no coordination section — do not invent
   wait conditions.
 - **The rest by handoff type.** IMPLEMENTATION: steps with known traps
@@ -148,12 +134,11 @@ The prompt also carries:
   as soon as the blocking condition clears. Also update any durable signal
   file; neither side should learn state changes only by polling.
 
-## 3. Report and maintain the signal
+## 3. Report the launch
 
-- Report the launch as `new-session` §4 says.
-- If a coordination signal exists: update it (status file / message)
-  when the blocking work in this session finishes, so the waiting
-  session can proceed.
+Report the launch as `new-session` §4 says. If a coordination signal
+exists, update it (status file or message) as soon as the blocking work
+in this session finishes, so the waiting session can proceed.
 
 ## 4. Hands off after the handoff
 
@@ -178,8 +163,6 @@ spawn a fresh one to re-learn the work.
 ## 6. Receiving a routed question
 
 **Rule a routed question OUT of your area before answering it inside
-it.** A receiver who checks whether the question is even theirs, with
-evidence, beats one who answers it well — an item routed as "a
-question about your subsystem" has turned out to be a test defect, and
-establishing that first is what made the fix small and correct.
-
+it**: check, with evidence, whether the question is yours at all — a
+"question about your subsystem" can turn out to be a defect elsewhere,
+such as in a test.

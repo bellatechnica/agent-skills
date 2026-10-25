@@ -5,7 +5,7 @@ description: Set up two-way messaging between coding-agent sessions, using Agent
 
 # Message between sessions
 
-This skill selects and maintains the communication channel between agent sessions. It does not launch a session or decide who owns the task. Read `agent-relay-message` for Relay registration, sends, replies, acknowledgements, listener behavior, and when a wake notice is permitted. Read the `wake.md` in that skill's directory for how to send one. Read `tmux-message` before any guarded tmux delivery. The shared Codex routing script in this skill attempts the native queue and uses that guarded sender only after definite pre-attempt unavailability.
+This skill selects and maintains the communication channel between agent sessions. It does not launch a session or decide who owns the task. Read `agent-relay-message` for Relay registration, sends, replies, acknowledgements, listener behavior, and when a wake notice is permitted. Read the `wake.md` in that skill's directory for how to send one. Read `tmux-message` before any guarded tmux delivery.
 
 ## Choose one channel before launch
 
@@ -16,7 +16,7 @@ The `agent-relay-message` skill itself never substitutes direct messaging for a 
 
 ## Operate Relay mode
 
-Each participant registers its assigned slug, reads pending messages once, then maintains exactly one listener using its client's rule in `agent-relay-message`. The sender also maintains a listener so replies and blockers have a route back. Use `send_message` for a new thread and `reply_to_message` for a response. A successful send is durable acceptance, not recipient processing; acknowledge only after processing as `agent-relay-message` directs.
+Each participant registers its assigned slug, reads pending messages once, then maintains exactly one listener using its client's rule in `agent-relay-message`. The sender also maintains a listener so replies and blockers have a route back.
 
 Inspect both `recipient_waiting_at_send` and
 `recipient_wake_watching_at_send` on **every** successful send or reply. The
@@ -24,9 +24,9 @@ second field reports a recipient using Relay's content-free wake watcher
 instead of an MCP wait:
 
 - If either is true, Relay observed a listener. Send no extra notice.
-- If both are false, the payload is still in Relay. Before sending any wake notice, read the `agent-relay-message` skill's `wake.md` in full; then send one content-free notice by the route `wake.md` gives. For a reachable Codex thread, run the `send_relay_wake.py` command `wake.md` gives, with the Codex address and `session-message`'s own `scripts/send_native_or_tmux.py` as its native sender; `send_relay_wake.py` tries `codex queue` first through it and falls back to guarded tmux only when no queue attempt started. A Claude Code sender may use `SendMessage` for a reachable Claude Code recipient. If that tool is unavailable before an attempt, or the recipient has no usable native address, use the guarded tmux wake if its pane is reachable. An uncertain native result forbids a second wake. Without a reachable route, report that active wake-up is unverified. The notice contains only the Relay message ID and inbox/listener instruction; the payload stays in Relay.
+- If both are false, the payload is still in Relay: read the `agent-relay-message` skill's `wake.md` in full, then send one content-free notice by the route it gives, passing this skill's `scripts/send_native_or_tmux.py` as its native sender. Without a reachable route, report that active wake-up is unverified.
 
-An ambiguous send has no authoritative waiting result: do not retry it or send a wake. A listener result with no payload calls for an inbox read, not an assumption that nothing is pending. Keep the client-specific listener active or recover it according to `agent-relay-message` while the sessions still need each other.
+Keep the client-specific listener active or recover it according to `agent-relay-message` while the sessions still need each other.
 
 ## Operate direct mode
 

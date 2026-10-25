@@ -16,8 +16,8 @@ Produce a reproducible API-equivalent estimate and, where the provider publishes
    - If the exact request timestamp is unavailable, use the current time and label it explicitly.
 
 2. Identify the source format.
-   - For Codex rollout JSONL, run `scripts/codex_token_cost.py`.
-   - For Claude Code project transcript JSONL (`~/.claude/projects/**/*.jsonl`), run `scripts/claude_token_cost.py`.
+   - For Codex rollout JSONL, read `references/codex.md` and run `scripts/codex_token_cost.py`.
+   - For Claude Code project transcript JSONL (`~/.claude/projects/**/*.jsonl`), read `references/claude-code.md` and run `scripts/claude_token_cost.py`.
    - Treat each provider parser as an adapter. Normalize its events to: timestamp, model, service tier when represented, turn, uncached input, cache write, cache read, and output; keep pricing and reporting provider-neutral.
    - For another provider's logs, inspect the schema before adding a separate adapter; do not copy Codex's fork/replay assumptions or Claude's cache-write TTL split onto a provider whose logs don't expose the equivalent concept.
    - For user-supplied aggregates, calculate directly without inventing missing categories.
@@ -37,78 +37,8 @@ Produce a reproducible API-equivalent estimate and, where the provider publishes
 5. Handle private or internal model names honestly.
    - Price public model rows directly.
    - Do not assert that an internal slug maps to a public model without an official source.
-   - Resolve time-sensitive mappings again for every report. As dated evidence, OpenAI's official [July 30, 2026 announcement](https://x.com/OpenAI/status/2082878180478910571) identifies the current Codex Auto Review model as GPT-5.6 Luna. If that announcement is still current, map `codex-auto-review` to `gpt-5.6-luna`; do not freeze this mapping permanently.
+   - Resolve time-sensitive mappings again for every report. The dated mappings known so far are in `references/codex.md`; check it for an internal model slug even when the user supplies token totals instead of logs.
    - If no current official mapping is available, produce clearly labeled proxy scenarios rather than silently pricing the internal slug.
-
-## Codex Rollout Accounting
-
-Use a command shaped like the following. The shown model mapping, rates, and multipliers are dated examples as of 2026-08-09; refresh them before every real report.
-
-```bash
-python3 <skill-dir>/scripts/codex_token_cost.py \
-  --sessions-root /home/user/.codex/sessions \
-  --since '2026-08-03 20:00:00' \
-  --until-message 'recalculate since August 3, 8:00 PM PT' \
-  --timezone America/Los_Angeles \
-  --rate 'gpt-5.6-sol=5,6.25,0.5,30' \
-  --rate 'gpt-5.6-terra=2.5,3.125,0.25,15' \
-  --rate 'gpt-5.6-luna=1,1.25,0.1,6' \
-  --credit-rate 'gpt-5.6-sol=125,0,12.5,750' \
-  --credit-rate 'gpt-5.6-terra=50,0,5,300' \
-  --credit-rate 'gpt-5.6-luna=5,0,0.5,30' \
-  --fast-multiplier 'gpt-5.6-sol=2,2.5' \
-  --fast-multiplier 'gpt-5.6-terra=2,2.5' \
-  --fast-multiplier 'gpt-5.6-luna=2,2.5' \
-  --proxy 'codex-auto-review=gpt-5.6-luna' \
-  --long-context 'gpt-5.6-sol=272000,2,1.5' \
-  --long-context 'gpt-5.6-terra=272000,2,1.5' \
-  --long-context 'gpt-5.6-luna=272000,2,1.5' \
-  --by-project
-```
-
-API and credit rate order is `uncached input, cache write, cache read, output`, all per million tokens. Fast-multiplier order is `API multiplier, usage-credit multiplier`. Long-context order is `input-token threshold, input multiplier, output multiplier`. The example rates and multipliers are dated 2026-08-09; refresh every value from official documentation before a real report.
-
-The script implements the non-obvious safeguards:
-
-- Ignore copied fork history before a rollout file's first live `turn_context`.
-- Establish a pre-window cumulative baseline for sessions already running at the cutoff.
-- Use deltas of `total_token_usage`; do not blindly sum `last_token_usage`, because compaction records can omit its component split.
-- Fall back to `last_token_usage` only for the first live sample or a counter reset.
-- Track the current model and turn from `turn_context` events.
-- Normalize Codex's recorded `default` tier to Standard and `priority` tier to Fast. Carry the active tier forward until an explicit change. For a session's initial unmarked state, backfill only when that turn has exactly one explicit tier marker. A turn with no tier marker at all is Standard, and the run's diagnostics count those turns. A named tier the script does not recognise stays unpriced rather than guessed.
-- Split rows by model and service tier. A turn that switches modes can appear in both detail rows but counts once in the total.
-- Count unique turns separately from sampling calls.
-- Read every rollout file, including concurrent and resumed sessions; do not select files by modification time.
-
-**Breaking Codex totals down by project folder:** add `--by-project`. Each token delta is assigned to the working directory in the active live `turn_context`, rather than to a rollout file's initial directory. Directories that resolve to the same filesystem object are merged; if a formerly used path cannot be statted, keep it as a distinct path rather than guessing. Text output adds a project-folder table with turns, token categories, API-equivalent cost, and usage credits. JSON model rows include `service_tier`, `api_cost`, and `usage_credits`; the top-level and per-project objects identify unpriced API and credit model/mode combinations separately.
-
-## Claude Code Transcript Accounting
-
-Use a command shaped like the following. The shown rates are dated examples as of 2026-08-04 (per-million-token USD: standard tier, `claude-opus-5` $5 input / $25 output, `claude-fable-5` $10 input / $50 output; cache read = 0.1x input, cache write 5-minute TTL = 1.25x input, cache write 1-hour TTL = 2x input); refresh them from current Anthropic pricing before every real report.
-
-```bash
-python3 <skill-dir>/scripts/claude_token_cost.py \
-  --logs-root /home/user/.claude/projects \
-  --since '2026-08-03 20:00:00' \
-  --until-message 'recalculate since August 3, 8:00 PM PT' \
-  --timezone America/Los_Angeles \
-  --rate 'claude-opus-5=5,6.25,10,0.5,25' \
-  --rate 'claude-fable-5=10,12.5,20,1,50' \
-  --rate 'claude-sonnet-5=3,3.75,6,0.3,15' \
-  --rate 'claude-haiku-4-5-20251001=1,1.25,2,0.1,5'
-```
-
-Rate order is `uncached input, cache write 5m TTL, cache write 1h TTL, cache read, output`, all per million tokens — unlike Codex's single cache-write rate, Claude's transcripts expose the 5-minute vs 1-hour cache TTL split and it is priced separately. Long-context order matches Codex: `input-token threshold, input multiplier, output multiplier` (relevant for requests whose total context — uncached + cache write + cache read — exceeds a model's standard-pricing threshold).
-
-The script implements the non-obvious safeguards:
-
-- Dedup globally across all files by `(message.id, requestId)`. Each content block (text, tool call, ...) of one API response is written as its own JSONL line, so summing lines naively multiplies every response's cost by its block count. The lines of one response do not all carry the final usage: lines written while the response was streaming hold a smaller `output_tokens` (non-decreasing in file order), and some lines or replayed copies hold placeholder zeros. Each response therefore contributes ONE whole line, never fields assembled from several lines: among the lines that have some input side (uncached input + cache write + cache read), the one with the largest `output_tokens`, ties broken first in favour of a line that carries a TTL split (the more specific record: on an output tie, an unsplit prompt estimate loses to the split line whatever their sizes), then by the largest input side, then by the remaining counters and the TTL split so the choice does not depend on scan order. Output comes first because streamed lines of one response share the prompt and differ only in output, which only grows; a line with no input side at all (a placeholder) cannot be the complete response and loses. If the greatest-output line has a smaller input side than another line of the response (an early line with an inflated or unsplit prompt estimate), the chosen line is still taken whole and the response is counted under `chosen_line_input_side_below_another_line`; if a line that lost carried more output (a placeholder with no input side at all), it is counted under `chosen_line_output_below_another_line`. Both counters are over in-window responses. A per-field maximum would be wrong because a proxy backend can report the prompt unsplit as `input_tokens` on an early line and split into uncached input plus cache write on the last, and combining the two counts the prompt twice. Keeping the first line undercounts output. A line with a TTL split but no flat `cache_creation_input_tokens` is given the split's sum as its cache write; where two lines with equal counters split a write differently, the larger 5-minute part wins (the lower, default-TTL rate). A response's timestamp (the `--since`/`--until` window test), model, project and turn come from its earliest line, ties going to the file scanned first (files are scanned in sorted path order). The `responses_with_disagreeing_usage_lines` diagnostic counts in-window responses whose lines disagreed on a counter or on a TTL split they both carry. Resumed and forked sessions also replay prior lines verbatim — with the original timestamps intact — into new session files; global dedup (not a per-file "first live event" cutoff, which Claude's schema has no equivalent marker for) handles both cases with one mechanism.
-- Read `cache_creation.ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens` for the TTL split of the chosen line; fall back to its flat `cache_creation_input_tokens` field as a 5-minute (the default TTL) write only when that line has no split or only an all-zero split against a non-zero flat total (a placeholder), and record that fallback as the `ttl_unspecified_assumed_5m` diagnostic. `ttl_split_mismatch` counts a non-zero split whose parts do not sum to the flat total. The read is strict about timestamps: a line with a missing-zone or malformed timestamp aborts it (a response with no timestamped line at all is dropped and counted as `missing_timestamp`).
-- Treat `input_tokens` in Claude's `usage` object as already excluding cache read/write — do not subtract cache categories from it.
-- Count a "turn" as a live human/subagent prompt: a `user`-type record whose content is a plain string or contains a non-`tool_result` block. Records that are purely `tool_result` blocks are synthetic continuations of the same turn, not new turns; count them toward the enclosing turn only.
-- Every `assistant` record observed in this dataset carries `service_tier: "standard"`; if a report ever finds `"priority"` records, price them separately since Anthropic's priority tier has different rates.
-
-**Breaking totals down by project:** add `--by-project` to also group by the top-level directory under `--logs-root` — for Claude Code transcripts that directory is one entry per working-directory the CLI was run from (e.g. `-home-me-proj`), auto-slugified from the absolute path. This prints a project-summary table (project, turns, API $) plus a per-project model breakdown, and adds a top-level `"projects"` key to `--format json` output shaped like `{project: {models: {...}, long_context_requests: {...}, unpriced_models: [...]}}`. Dedup still happens once, globally, in the read pass before events are split by project — a message that (rarely) straddles two project directories is attributed to whichever file the scan reaches first, not double-counted.
 
 ## Output Contract
 
@@ -144,10 +74,6 @@ Use provider-specific component names, including TTL distinctions only when the 
 - Do not sum cumulative snapshots as independent usage.
 - Do not count replayed history in forked sessions.
 - Do not use file modification times as usage timestamps.
-- Do not double-count cached input or reasoning output.
-- Do not silently price an internal model.
-- Do not silently treat Unknown service tier as Standard or apply one Fast multiplier to a mixed window.
 - Do not translate usage credits into dollars without an official conversion that applies to the user's plan.
-- Do not encode a provider-specific parser, cache category, or transient model mapping into the shared report contract.
 - Do not round intermediate calculations; round only presentation values.
 - Preserve an exact machine-readable result with `--format json` when the user needs auditability.
