@@ -117,9 +117,9 @@ The prompt also carries:
   - **Everything else**: start directly — the session itself judges
     when the work is worth stopping. The moment it turns up a real
     decision, it pauses and asks instead of guessing: gaps in the
-    handoff itself go to the sender's pane (the context holder); calls
-    the sender cannot settle — product-visible behavior, revising a
-    committed decision — go to the user. Work that never surfaces one
+    handoff itself go to the sender (the context holder) at the address
+    the prompt gives; calls the sender cannot settle — product-visible
+    behavior, revising a committed decision — go to the user. Work that never surfaces one
     runs straight through. Either way it ends with a short RECAP to
     the user — what changed, key decisions, how it was verified,
     anything pending. The user does not read the handoff doc; the

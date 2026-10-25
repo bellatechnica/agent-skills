@@ -38,7 +38,7 @@ address or a project identity belongs.
 - **Signal**: personal email domains in tracked files; any identifier
   the project has named as sensitive; and **every commit's author and
   committer email across all refs** —
-  `git log --all --format='%ae' | sort -u` — because a personal address
+  `git log --all --format='%ae%n%ce' | sort -u` — because a personal address
   sits in git metadata with no tracked line ever mentioning it.
 - **Never choose a contact identity on the user's behalf.** Where an
   outbound identity is genuinely needed, it is theirs to pick.

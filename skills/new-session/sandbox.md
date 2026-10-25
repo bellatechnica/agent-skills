@@ -8,9 +8,14 @@ skill's directory.
 
 ## Model
 
-For `codex-sbx` and `claude-sbx`, the required profile is the explicit
-model/provider choice; do not add `--model` unless the user asks to
-override that profile.
+A profile is a directory holding the agent's settings file
+(`config.toml` for Codex, `settings.json` for Claude Code), and it is the
+explicit model/provider choice; do not add `--model` unless the user
+asks to override that profile. Pass it only as `--profile-dir <dir>`; a profile
+the user names is the directory `~/.agents/models/<name>`. A bare first
+argument is the agent's prompt, not a profile. Without
+`--profile-dir` the sandbox runs the agent on its own defaults, so pass
+`--model` as `SKILL.md` §3 says.
 
 ## Launch
 
@@ -19,14 +24,15 @@ its initial prompt (write it without apostrophes, or send it literally
 with `send-keys -l`):
 
     # Codex in Docker Sandbox
-    codex-sbx <profile> "<prompt>"
+    codex-sbx --profile-dir <profile-dir> "<prompt>"
 
     # Claude Code in Docker Sandbox
-    claude-sbx <profile> --session-id <uuid> "<prompt>"
+    claude-sbx --profile-dir <profile-dir> --session-id <uuid> "<prompt>"
 
 For `codex-sbx` and `claude-sbx`, launch from the repo root just as for the
-corresponding direct client. The same repo root, agent, and profile reuse one
-Docker sandbox and start another agent process there; this is expected. Give
+corresponding direct client. The same agent, profile name, and repo-root
+basename reuse one Docker sandbox and start another agent process there; this
+is expected. Give
 every process a unique tmux window name and Relay slug even when the profile
 repeats, plus its normal Codex session name or Claude UUID. Different agents
 or profiles select different sandboxes.
@@ -50,21 +56,40 @@ Codex rejects it.
 
 Give the session a stable name as `SKILL.md` §3 says, but record the
 sandbox entry below in `docs/do_not_commit/handoff-sessions.log` in place
-of the direct one. For sandboxed Codex, append
-`<date> codex-sbx <profile> <window-slug>` so a later resume uses the same
-persistent sandbox. Record Claude's profile with its session UUID:
+of the direct one, with the profile directory as an absolute path. For
+sandboxed Codex, append `<date> codex-sbx <profile-dir> <window-slug>` so
+a later resume uses the same persistent sandbox. Record Claude's profile
+directory with its session UUID:
 
-    <date> claude-sbx <profile> <window-slug> <uuid>
+    <date> claude-sbx <profile-dir> <window-slug> <uuid>
 
 ## Resume
 
-For sandboxed Codex, find the recorded profile in
+For sandboxed Codex, find the recorded profile directory in
 `docs/do_not_commit/handoff-sessions.log` and run
-`codex-sbx <recorded-profile> resume <window-slug>` from the same repo root.
-For sandboxed Claude Code, find the UUID in the same log and use
-`claude-sbx <recorded-profile> --resume <uuid>` from the same repo root.
+`codex-sbx --profile-dir <recorded-dir> resume <window-slug>` from the same
+repo root. For sandboxed Claude Code, find the UUID in the same log and use
+`claude-sbx --profile-dir <recorded-dir> --resume <uuid>` from the same repo
+root.
+
+An entry that records a bare profile name instead of a directory does not
+say how the session was launched. Run `sbx ls` (in sandbox names, characters
+outside `A-Za-z0-9.+-` become `-`):
+
+- `<agent>-<profile>-<repo-root basename>` was launched with a profile of
+  that name: resume with `--profile-dir ~/.agents/models/<profile>`, which
+  must be the directory the sandbox was created with, since its mounts are
+  fixed when it is created.
+- `<agent>-<repo-root basename>` was launched without a profile: resume
+  without `--profile-dir`.
+- Both names: ask the user which one holds the session.
+- Neither name: the session's sandbox is gone, or was created with
+  `--name`, which the entry does not record. Ask the user whether they know
+  its name, and resume with `--name <that name>` if they do; otherwise
+  report the session as unrecoverable rather than launching, since a launch
+  would create a new, empty sandbox.
 
 Sandbox stop/start preserves the shared VM state; sandbox removal or reset
 destroys every stored login and agent session in it. Do not remove a reused
-sandbox until every session using that repo/agent/profile combination has
-finished.
+sandbox until every session using that agent, profile name and repo-root
+basename has finished.

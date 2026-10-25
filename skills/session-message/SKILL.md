@@ -14,6 +14,8 @@ This skill selects and maintains the communication channel between agent session
 
 The `agent-relay-message` skill itself never substitutes direct messaging for a failed Relay call. The calling workflow may select the announced direct fallback only at this preflight boundary. After Relay mode starts, a later failure does not change channels automatically: report the failed operation and preserve the inbox state. Never resend an ambiguously accepted Relay payload through another channel. A deliberate later channel change needs explicit direction and reconciliation of pending Relay messages.
 
+Sessions that are already running choose the channel the same way, before their first message to each other rather than before a launch.
+
 ## Operate Relay mode
 
 Each participant registers its assigned slug, reads pending messages once, then maintains exactly one listener using its client's rule in `agent-relay-message`. The sender also maintains a listener so replies and blockers have a route back.
