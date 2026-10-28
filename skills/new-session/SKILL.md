@@ -13,8 +13,9 @@ how it involves the user: the calling workflow (`handoff`, `implement`,
 ## 0. Choose the agent
 
 Unless the user names one, launch the same assistant family as this
-session: Codex launches `codex`, Claude Code launches `claude`, and
-another supported assistant launches its own CLI. An explicit user
+session: Codex launches `codex`, Claude Code launches `claude`, Muse
+Code launches `muse`, and another supported assistant launches its own
+CLI. An explicit user
 choice always wins. Verify that the selected executable exists; if it
 does not, report that instead of silently substituting another agent.
 
@@ -104,8 +105,9 @@ yet. When it does:
   `sandbox.md` in this skill's directory in full and launch, log and
   resume as it says, in place of the direct commands below.
 - **Pass the model explicitly: default to the SAME model this session
-  is running.** Use `codex --model <model>` for Codex or
-  `claude --model <model>` for Claude Code. Without the flag the new
+  is running.** Use `codex --model <model>` for Codex,
+  `claude --model <model>` for Claude Code, or `muse --model <model>`
+  for Muse Code. Without the flag the new
   session falls back to a saved default, which can drift as the user
   switches models. Deviate only deliberately — a genuinely mechanical
   task on a cheaper model, or a model the user named — and say so in the
@@ -117,7 +119,13 @@ yet. When it does:
   `<date> claude <window-slug> <uuid>` to
   `docs/do_not_commit/handoff-sessions.log`, and revive it with
   `claude --resume <uuid>`. Send `/rename <window-slug>` there too so
-  its picker exposes the human-readable name.
+  its picker exposes the human-readable name. For Muse Code, send
+  `/rename <window-slug>` once the session is up and revive it with
+  `muse resume <window-slug>`. If Muse refuses the name because
+  `~/.local/share/muse` is writable by group or others, tell the user,
+  who may run `chmod go-w ~/.local/share/muse`; the session takes a name
+  only after a restart, so until then resume it from `muse resume`'s
+  picker.
 - Build the launch command for the selected agent, passing the task
   as its initial prompt (write it without apostrophes, or send it
   literally with `send-keys -l`):
@@ -127,6 +135,9 @@ yet. When it does:
 
       # Claude Code (when this skill runs there or the user requests it)
       claude --session-id <uuid> --model <model> "<prompt>"
+
+      # Muse Code (its workspace is the window's directory)
+      muse --model <model> "<prompt>"
 
   Other explicitly requested assistants use their equivalent workspace,
   model, initial-prompt, naming, and resume options. Do not weaken their
@@ -169,7 +180,8 @@ decisions.
 - A log entry naming `codex-sbx` or `claude-sbx` is a sandboxed
   session: resume it as `sandbox.md` in this skill's directory says.
 - Resume with the same agent that owns the session. For Codex, use
-  `codex resume <window-slug>`. For Claude Code, find the UUID in
+  `codex resume <window-slug>`; for Muse Code, `muse resume
+  <window-slug>`. For Claude Code, find the UUID in
   `docs/do_not_commit/handoff-sessions.log` and use
   `claude --resume <uuid>`. For older unnamed sessions, use that agent's
   resume picker and match the first user message against the launch prompt;

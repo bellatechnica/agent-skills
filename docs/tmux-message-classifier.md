@@ -30,8 +30,8 @@ rows are joined anyway is not split back and classifies as `UNKNOWN`.
 
 ## Recognized composers
 
-The sender recognizes only anchored Claude Code, Codex, Antigravity CLI, OpenCode, and
-Cursor CLI composer regions. The Antigravity CLI 1.1.27 and OpenCode 1.18.31
+The sender recognizes only anchored Claude Code, Codex, Antigravity CLI, OpenCode,
+Cursor CLI, and Muse Code composer regions. The Antigravity CLI 1.1.27 and OpenCode 1.18.31
 shapes were live-checked on 2026-09-14, and the Cursor CLI 2026.10.01 and
 2026.09.18 shapes on 2026-10-02:
 
@@ -123,6 +123,35 @@ shapes were live-checked on 2026-09-14, and the Cursor CLI 2026.10.01 and
   Enter on an empty input, and the sender presses Enter only after the paste
   has made the input non-empty. Not observed: overlays other than those named
   here.
+- Muse Code draws a Claude Code-shaped composer: full-width top and bottom
+  borders, one column-zero `❯` prompt and two-column continuation rows. It is
+  told apart by its bottommost row, the status row `  <model> · <effort> ·
+  <workspace> · <permission profile>`, which may carry a right-aligned notice
+  such as `Draft cleared · press ↑ to restore`. Muse is tried before Claude
+  Code, whose shape the same pane otherwise satisfies. When a transient row
+  replaces the status row, such as `Press Ctrl-C again to quit`, the box is
+  classified by the Claude Code shape instead; that is harmless for delivery,
+  because the prompt, the continuation rows and the styling of drafts and
+  paste placeholders are read the same way, and the background-work panel
+  below makes the Claude Code shape refuse the pane. While background subagents or monitors run, Muse draws a
+  panel between the lower border and the status row: a column-zero `main`
+  header, then one `├`/`└` tree row per task. The header reads `main` or
+  `main · ↓ to select` while the composer has focus, which is accepted. Once
+  the operator moves focus into the panel the header reads `main · Enter to
+  view · x to stop` and the cursor is hidden; keys then act on the selected
+  task, `x` stopping it, so that state is `DIALOG`. Any other row between the
+  border and the status row is `UNKNOWN layout`. A long paste becomes the
+  `[Pasted Content N chars]` placeholder Codex also uses, drawn bold rather
+  than dim. The slash-command palette lists commands inside the box below a
+  `/` draft, so it is `OCCUPIED`. The workspace-trust prompt replaces the
+  composer and is `UNKNOWN layout`; the tool approval prompt was seen to
+  replace it too but was not captured. Not observed: the panel after Enter
+  opens a task's view. Observed on
+  Muse Code 1.4.14 on 2026-10-27 in 100- and 378-column panes. A long draft
+  wraps at a word boundary and the space at the break is not drawn. The
+  client's documentation says Enter steers a running turn and Alt+Enter queues
+  for the next one, so a message the sender submits mid-turn joins that turn;
+  the composer during a running turn was not captured.
 - Continuation rows require the clients' two-column continuation indentation.
   Quoted or pasted prompt and border glyphs inside a draft do not become
   structural markers.
@@ -138,7 +167,8 @@ Before Enter, the script waits until one capture shows non-empty composer text
 after the successful paste command. A changed all-dim suggestion remains
 `CLEAR` and does not establish that the paste was processed. A native Claude
 Code or Antigravity CLI `Pasted text` or `Truncated text`
-placeholder, Codex `Pasted Content` placeholder, or OpenCode `Pasted ~N lines`
+placeholder, Codex or Muse Code `Pasted Content` placeholder, or OpenCode
+`Pasted ~N lines`
 placeholder is always content and therefore `OCCUPIED`; because the initial
 composer had to be clear, its appearance after paste proves processing.
 A stale clear frame does not qualify. If every capture in the 3.15-second window

@@ -141,6 +141,32 @@ def agy_capture(first: str = "", *continuations: str) -> str:
 
 
 
+MUSE_STATUS = (
+    "\x1b[0m\x1b[38;5;242m  \x1b[38;5;75mmuse-wonder-1.0\x1b[38;5;246m · "
+    "\x1b[38;5;75mhigh\x1b[38;5;246m · /mnt/d/proj · \x1b[38;5;75mAuto-review\x1b[39m"
+)
+
+
+def muse_capture(
+    first: str = "", *continuations: str, panel: tuple[str, ...] = ()
+) -> str:
+    """Muse Code 1.4.14 composer rows under capture-pane -e (2026-10-27)."""
+    border = f"\x1b[2m\x1b[38;5;242m{BORDER}"
+    prompt = f"\x1b[0m\x1b[38;5;75m❯ \x1b[38;5;252m{first}\x1b[39m"
+    rows = [border, prompt]
+    rows.extend(f"\x1b[38;5;242m  \x1b[38;5;252m{row}\x1b[39m" for row in continuations)
+    rows.append(border)
+    rows.extend(panel)
+    rows.append(MUSE_STATUS)
+    return "\n".join(rows) + "\n"
+
+
+MUSE_PANEL_AGENT = (
+    "\x1b[38;5;242m└ \x1b[38;5;252m◆ \x1b[38;5;246mrelay-waiter ·2  shared · "
+    "Your only job is: wait\x1b[39m"
+)
+
+
 def opencode_capture(
     first: str = "",
     *continuations: str,
@@ -637,6 +663,77 @@ class ClassifyCaptureTests(unittest.TestCase):
     def test_agy_requires_its_model_footer(self) -> None:
         capture = agy_capture("draft").replace("Gemini 3.8 Flash · high", "status")
         self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "UNKNOWN")
+
+    def test_muse_bare_prompt_is_clear_and_not_claude(self) -> None:
+        capture = muse_capture()
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "CLEAR")
+        composer = tmux_send._composer(tmux_send._capture_lines(capture), WIDTH)
+        self.assertEqual(composer.client, "muse")
+
+    def test_muse_typed_and_multiline_drafts_are_occupied(self) -> None:
+        for capture in (muse_capture("draft"), muse_capture("first", "second")):
+            with self.subTest(capture=capture):
+                self.assertEqual(
+                    tmux_send.classify_capture(capture, WIDTH), "OCCUPIED"
+                )
+
+    def test_muse_native_paste_placeholder_is_occupied_even_when_dim(self) -> None:
+        for placeholder in (
+            "\x1b[1m\x1b[38;5;246m[Pasted Content 1791 chars]\x1b[0m",
+            "\x1b[2m[Pasted Content 1791 chars]\x1b[0m",
+        ):
+            with self.subTest(placeholder=placeholder):
+                self.assertEqual(
+                    tmux_send.classify_capture(muse_capture(placeholder), WIDTH),
+                    "OCCUPIED",
+                )
+
+    def test_muse_panel_with_composer_focus_is_clear(self) -> None:
+        for header in ("main · ↓ to select", "main"):
+            with self.subTest(header=header):
+                capture = muse_capture(
+                    panel=(f"\x1b[0;1m\x1b[38;5;75m{header}\x1b[0m", MUSE_PANEL_AGENT)
+                )
+                self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "CLEAR")
+
+    def test_muse_panel_with_its_own_focus_is_dialog(self) -> None:
+        # Keys typed here act on the panel, where `x` stops the selected task.
+        capture = muse_capture(
+            panel=(
+                "\x1b[0;1m\x1b[38;5;75mmain\x1b[0m\x1b[38;5;242m · Enter to view · x to stop",
+                MUSE_PANEL_AGENT,
+            )
+        )
+        self.assertEqual(tmux_send.classify_capture(capture, WIDTH), "DIALOG")
+
+    def test_muse_unrecognized_rows_between_composer_and_status_are_unknown(self) -> None:
+        for panel in (("$ ls",), ("main", "$ ls"), ("other · ↓ to select", MUSE_PANEL_AGENT)):
+            with self.subTest(panel=panel):
+                self.assertEqual(
+                    tmux_send.classify_capture(muse_capture(panel=panel), WIDTH),
+                    "UNKNOWN",
+                )
+
+    def test_muse_without_its_status_row_falls_back_to_claude_code(self) -> None:
+        # A transient row can replace Muse's status row; the box then reads as
+        # Claude Code's, whose classification of it is the same.
+        capture = muse_capture().replace(MUSE_STATUS, "  Press Ctrl-C again to quit")
+        composer = tmux_send._composer(tmux_send._capture_lines(capture), WIDTH)
+        self.assertEqual(composer.client, "claude")
+
+    def test_muse_paste_and_clear_are_observable(self) -> None:
+        def capture(screen: str) -> object:
+            response = mock.Mock(returncode=0, stdout=screen, stderr="")
+            with mock.patch.object(tmux_send, "_tmux", side_effect=(response,)):
+                return tmux_send.capture_target(pane())
+
+        before = capture(muse_capture())
+        pasted = capture(muse_capture("message"))
+        after = capture(muse_capture())
+        self.assertEqual(before.state, "CLEAR")
+        self.assertEqual(pasted.state, "OCCUPIED")
+        self.assertTrue(tmux_send._paste_processed(pasted, before.composer))
+        self.assertTrue(tmux_send._submit_cleared(after, pasted))
 
     def test_opencode_blank_composer_is_clear(self) -> None:
         capture, cursor_x, cursor_y = opencode_capture()

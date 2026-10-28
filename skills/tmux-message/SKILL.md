@@ -1,6 +1,6 @@
 ---
 name: tmux-message
-description: Deliver one message to a Claude Code, Codex, Antigravity CLI, OpenCode, or Cursor CLI tmux pane through a fail-closed sender that pins the pane, classifies its composer, uses bracketed paste, and verifies a positive submit transition. Use whenever pinging, replying to, or handing something to a session in another tmux pane, including merge requests, verdicts, handoff prompts, status pings, and Agent Relay wake notices.
+description: Deliver one message to a Claude Code, Codex, Antigravity CLI, OpenCode, Cursor CLI, or Muse Code tmux pane through a fail-closed sender that pins the pane, classifies its composer, uses bracketed paste, and verifies a positive submit transition. Use whenever pinging, replying to, or handing something to a session in another tmux pane, including merge requests, verdicts, handoff prompts, status pings, and Agent Relay wake notices.
 ---
 
 # Message another session through tmux
@@ -41,8 +41,8 @@ distinguish a confirmed pre-send refusal from an uncertain attempt.
 - A busy session is valid only when its structurally recognized composer is
   still visible. Activity text without a composer is `UNKNOWN layout`; only the
   inspection-authorized fallback can permit delivery on that refused shape.
-- A message to a busy OpenCode pane steers the active response; one to a busy
-  Cursor CLI pane is queued behind the current turn.
+- A message to a busy OpenCode or Muse Code pane steers the active response;
+  one to a busy Cursor CLI pane is queued behind the current turn.
 
 ## Supply the exact message
 
@@ -138,9 +138,9 @@ caller that positively identifies the intended agent's ordinary, clear message
 composer and judges the pane safe. A real draft, dialog, overlay, shell mode,
 permission prompt, or composer addressed to another agent is not safe; wait
 instead. A client-native paste placeholder (`[Pasted text #N …]`, Claude Code's
-and Antigravity CLI's `[...Truncated text #N +N lines...]`, `[Pasted Content N
-chars]`, or `[Pasted ~N lines]`) is a real draft even when dim, and typed text
-followed by a dim completion is a real draft. Only a composer whose entire
+and Antigravity CLI's `[...Truncated text #N +N lines...]`, Codex's and Muse
+Code's `[Pasted Content N chars]`, or `[Pasted ~N lines]`) is a real draft
+even when dim, and typed text followed by a dim completion is a real draft. Only a composer whose entire
 visible content is empty, or is a dim suggestion with no typed characters, is
 clear.
 

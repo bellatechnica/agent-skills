@@ -55,6 +55,18 @@ CLAUDE_SELECTED_PANEL_RE = re.compile(r"^\s*●(?:\s|$)")
 CLAUDE_MAIN_SELECTED_RE = re.compile(r"^\s*●\s+main(?:\s|$)")
 CLAUDE_AGENT_MESSAGE_RE = re.compile(r"^Message @")
 AGY_FOOTER_RE = re.compile(r".*\S · (?:low|medium|high)$", re.IGNORECASE)
+# Muse Code's status row: model, reasoning effort, workspace and permission
+# profile, with transient notices right-aligned on the same row.
+MUSE_STATUS_RE = re.compile(
+    r"^  \S+ · (?:none|minimal|low|medium|high|xhigh|max|ultra) · \S"
+)
+# The background-work panel Muse Code draws between its composer and status
+# row: a `main` header, then one tree row per subagent or monitor. The header
+# reads `main` or `main · ↓ to select` while the composer has focus, and offers
+# `Enter to view · x to stop` once focus has moved into the panel.
+MUSE_PANEL_HEADER_RE = re.compile(r"^main(?: · ↓ to select)?$")
+MUSE_PANEL_FOCUSED_RE = re.compile(r"^main · Enter to view\b")
+MUSE_PANEL_ROW_RE = re.compile(r"^[├└] ")
 CURSOR_MODE_ROW_RE = re.compile(r"^  \S.* \(shift\+tab to cycle\)$")
 CURSOR_TEXT_COLUMN = 4
 # The row the Cursor CLI draws inside its follow-ups panel, above the composer,
@@ -439,6 +451,79 @@ def _agy_composer(lines: list[str], pane_width: int | None) -> Composer | None:
     return Composer("agy", "\n".join(text_lines), has_dim, has_non_dim)
 
 
+def _muse_trailing_rows(lines: list[str], pane_width: int | None) -> tuple[int, list[str]] | None:
+    """Return the bottom border and the nonblank rows below it, if Muse's."""
+    bottom = None
+    for index in range(len(lines) - 1, -1, -1):
+        if _is_plain_full_width_border(lines[index], pane_width):
+            bottom = index
+            break
+    if bottom is None:
+        return None
+    trailing_nonblank = [
+        _visible(line).rstrip() for line in lines[bottom + 1 :] if _visible(line).strip()
+    ]
+    if not trailing_nonblank or MUSE_STATUS_RE.match(trailing_nonblank[-1]) is None:
+        return None
+    return bottom, trailing_nonblank[:-1]
+
+
+def _muse_dialog(lines: list[str], pane_width: int | None) -> bool:
+    """Muse's composer is drawn, but its background-work panel has the keys."""
+    trailing = _muse_trailing_rows(lines, pane_width)
+    return (
+        trailing is not None
+        and bool(trailing[1])
+        and MUSE_PANEL_FOCUSED_RE.match(trailing[1][0]) is not None
+    )
+
+
+def _muse_composer(lines: list[str], pane_width: int | None) -> Composer | None:
+    trailing = _muse_trailing_rows(lines, pane_width)
+    if trailing is None:
+        return None
+    bottom, panel = trailing
+    if panel and (
+        MUSE_PANEL_HEADER_RE.match(panel[0]) is None
+        or any(MUSE_PANEL_ROW_RE.match(row) is None for row in panel[1:])
+    ):
+        return None
+
+    top = None
+    for index in range(bottom - 1, -1, -1):
+        if _is_plain_full_width_border(lines[index], pane_width):
+            top = index
+            break
+    if top is None:
+        return None
+
+    region = lines[top + 1 : bottom]
+    prompt_indices = [
+        index for index, line in enumerate(region) if _visible(line).startswith("❯")
+    ]
+    if prompt_indices != [0]:
+        return None
+
+    first = _remove_prompt_separator(
+        region[0],
+        "❯",
+        trim_display_padding=True,
+    )
+    if first is None:
+        return None
+    text_lines = [first[0]]
+    has_dim = first[1]
+    has_non_dim = first[2]
+    for line in region[1:]:
+        continuation = _continuation(line, trim_display_padding=True)
+        if continuation is None:
+            return None
+        text_lines.append(continuation[0])
+        has_dim = has_dim or continuation[1]
+        has_non_dim = has_non_dim or continuation[2]
+    return Composer("muse", "\n".join(text_lines), has_dim, has_non_dim)
+
+
 def _is_codex_footer(raw_line: str, pane_width: int | None) -> bool:
     visible = _visible(raw_line)
     if CODEX_HINT_ROW_RE.match(visible.rstrip()) or CODEX_WARNING_ROW_RE.match(
@@ -753,8 +838,12 @@ def _composer(
     cursor_x: int | None = None,
     cursor_y: int | None = None,
 ) -> Composer | None:
+    # Muse is tried first: without its background-work panel, its composer
+    # also satisfies the Claude Code shape, and only its status row tells them
+    # apart.
     return (
-        _claude_composer(lines, pane_width)
+        _muse_composer(lines, pane_width)
+        or _claude_composer(lines, pane_width)
         or _agy_composer(lines, pane_width)
         or _codex_composer(lines, pane_width)
         or _opencode_composer(lines, cursor_x, cursor_y)
@@ -767,6 +856,7 @@ def _native_paste_placeholder_pattern(composer: Composer) -> re.Pattern[str]:
         return CLAUDE_PASTE_PLACEHOLDER_RE
     if composer.client == "opencode":
         return OPENCODE_PASTE_PLACEHOLDER_RE
+    # Codex and Muse Code draw the same `[Pasted Content N chars]` placeholder.
     return CODEX_PASTE_PLACEHOLDER_RE
 
 
@@ -789,6 +879,8 @@ def classify_capture(
     if _opencode_dialog(lines, cursor_x, cursor_y):
         return DIALOG
     if _cursor_dialog(lines):
+        return DIALOG
+    if _muse_dialog(lines, pane_width):
         return DIALOG
     composer = _composer(lines, pane_width, cursor_x, cursor_y)
     if composer is None:

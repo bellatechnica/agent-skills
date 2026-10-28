@@ -63,8 +63,9 @@ on it.
 ## How skills are structured
 
 Agent CLIs that read a `skills/` directory of `SKILL.md` files can use these
-skills; Claude Code and Codex CLI both do. Each subdirectory of `skills/` is
-one skill: a `SKILL.md` with YAML frontmatter (`name`, `description`) plus
+skills; Claude Code, Codex CLI and Muse Code all do (Muse Code reads
+`~/.agents/skills` and, by default, `~/.claude/skills`). Each subdirectory of
+`skills/` is one skill: a `SKILL.md` with YAML frontmatter (`name`, `description`) plus
 whatever reference files and scripts it needs. Evidence behind a skill's
 design that an agent does not need in order to act, such as the observations
 behind `tmux-message`'s composer classifier, lives in `docs/`.
