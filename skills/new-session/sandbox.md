@@ -38,13 +38,13 @@ corresponding direct client. The same agent, profile name, and repo-root
 basename reuse one Docker sandbox and start another agent process there; this
 is expected. Give
 every process a unique tmux window name and Relay slug even when the profile
-repeats, plus its normal Codex session name or Claude UUID. Different agents
+repeats, plus its normal Codex or Muse Code session name or Claude UUID. Different agents
 or profiles select different sandboxes.
 
 The ordinary worktree rule is unchanged. Read-only sessions may share the
 repo root. Every session that will edit files creates its OWN new worktree
 after launch and moves into it before the first edit; two processes in one
-container do not share an editing worktree. Do not launch either wrapper from
+container do not share an editing worktree. Do not launch any of these wrappers from
 a host linked worktree: Docker mounts that directory without the parent
 repository's Git metadata, so the sandboxed process cannot use Git there.
 
