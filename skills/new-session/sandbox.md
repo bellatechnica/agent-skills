@@ -18,6 +18,12 @@ argument is the agent's prompt, not a profile. Without
 `--profile-dir` the sandbox runs the agent on its own defaults, so pass
 `--model` as `SKILL.md` §3 says.
 
+A Muse Code profile is not a model choice: its `settings.json` is merged
+into the client's own and must be a Muse Code settings file, which carries a
+`schema_version` member. Profiles written for Claude Code are not Muse
+profiles; never pass one to `muse-sbx`. Always pass `--model` to `muse-sbx`
+as `SKILL.md` §3 says.
+
 ## Launch
 
 Build the launch command for the selected agent, passing the task as
