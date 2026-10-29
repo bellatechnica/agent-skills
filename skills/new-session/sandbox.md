@@ -1,7 +1,7 @@
 # Launch a session in Docker Sandbox
 
 Read this when the user requests Docker Sandbox or a settings profile,
-which selects the `codex-sbx` or `claude-sbx` launcher. Everything not
+which selects the `codex-sbx`, `claude-sbx` or `muse-sbx` launcher. Everything not
 covered here — choosing the agent, the channel, the worktree rules, the
 launch prompt, cleanup and the stall watch — follows `SKILL.md` in this
 skill's directory.
@@ -9,7 +9,8 @@ skill's directory.
 ## Model
 
 A profile is a directory holding the agent's settings file
-(`config.toml` for Codex, `settings.json` for Claude Code), and it is the
+(`config.toml` for Codex, `settings.json` for Claude Code or Muse Code),
+and it is the
 explicit model/provider choice; do not add `--model` unless the user
 asks to override that profile. Pass it only as `--profile-dir <dir>`; a profile
 the user names is the directory `~/.agents/models/<name>`. A bare first
@@ -29,7 +30,10 @@ with `send-keys -l`):
     # Claude Code in Docker Sandbox
     claude-sbx --profile-dir <profile-dir> --session-id <uuid> "<prompt>"
 
-For `codex-sbx` and `claude-sbx`, launch from the repo root just as for the
+    # Muse Code in Docker Sandbox
+    muse-sbx --profile-dir <profile-dir> "<prompt>"
+
+For every launcher, launch from the repo root just as for the
 corresponding direct client. The same agent, profile name, and repo-root
 basename reuse one Docker sandbox and start another agent process there; this
 is expected. Give
@@ -50,7 +54,9 @@ its login menu; before an unattended launch, have the user authenticate
 inside that sandbox and verify `codex login status` there. Never mount or copy
 host Codex credentials. Docker's Codex startup already supplies
 `--dangerously-bypass-approvals-and-sandbox`; do not append a duplicate because
-Codex rejects it.
+Codex rejects it. A new Muse Code sandbox likewise stops at its sign-in
+menu; have the user complete the browser login inside it before an
+unattended launch. `muse-sbx` already starts the client with `--yolo`.
 
 ## Log the session for resume
 
@@ -58,7 +64,9 @@ Give the session a stable name as `SKILL.md` §3 says, but record the
 sandbox entry below in `docs/do_not_commit/handoff-sessions.log` in place
 of the direct one, with the profile directory as an absolute path. For
 sandboxed Codex, append `<date> codex-sbx <profile-dir> <window-slug>` so
-a later resume uses the same persistent sandbox. Record Claude's profile
+a later resume uses the same persistent sandbox; sandboxed Muse Code
+likewise appends `<date> muse-sbx <profile-dir> <window-slug>`. Record
+Claude's profile
 directory with its session UUID:
 
     <date> claude-sbx <profile-dir> <window-slug> <uuid>
@@ -70,7 +78,9 @@ For sandboxed Codex, find the recorded profile directory in
 `codex-sbx --profile-dir <recorded-dir> resume <window-slug>` from the same
 repo root. For sandboxed Claude Code, find the UUID in the same log and use
 `claude-sbx --profile-dir <recorded-dir> --resume <uuid>` from the same repo
-root.
+root. For sandboxed Muse Code, run
+`muse-sbx --profile-dir <recorded-dir> resume <window-slug>` from the same
+repo root.
 
 An entry that records a bare profile name instead of a directory does not
 say how the session was launched. Run `sbx ls` (in sandbox names, characters

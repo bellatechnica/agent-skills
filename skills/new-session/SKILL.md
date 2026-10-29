@@ -1,6 +1,6 @@
 ---
 name: new-session
-description: Launch a new agent session in its own tmux window - choose the agent CLI and model (the same as this session's unless the user names another, through codex-sbx or claude-sbx when Docker Sandbox or a settings profile is requested), set up its message channel through session-message and tell it to load that skill when the two sessions will communicate, place it at the repo root or in its own new worktree on the right base commit, name it for resume, revive it after it closes, and clean up its worktree and branch once its work has landed, and watch it for stalls while waiting on it. Use whenever a workflow starts a separate session (handoff, implement, review-session, and others); the calling workflow decides the task and who owns it.
+description: Launch a new agent session in its own tmux window - choose the agent CLI and model (the same as this session's unless the user names another, through codex-sbx, claude-sbx or muse-sbx when Docker Sandbox or a settings profile is requested), set up its message channel through session-message and tell it to load that skill when the two sessions will communicate, place it at the repo root or in its own new worktree on the right base commit, name it for resume, revive it after it closes, and clean up its worktree and branch once its work has landed, and watch it for stalls while waiting on it. Use whenever a workflow starts a separate session (handoff, implement, review-session, and others); the calling workflow decides the task and who owns it.
 ---
 
 # Launch a new session
@@ -177,7 +177,7 @@ original session — never spawn a fresh one to re-learn the work**:
 its conversation holds the diagnosis, the numbers and the half-made
 decisions.
 
-- A log entry naming `codex-sbx` or `claude-sbx` is a sandboxed
+- A log entry naming `codex-sbx`, `claude-sbx` or `muse-sbx` is a sandboxed
   session: resume it as `sandbox.md` in this skill's directory says.
 - Resume with the same agent that owns the session. For Codex, use
   `codex resume <window-slug>`; for Muse Code, `muse resume
