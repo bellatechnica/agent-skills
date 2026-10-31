@@ -52,8 +52,6 @@ on it.
 
 - `token-cost` — work out what a stretch of Claude Code or Codex usage would
   cost at API prices, from the CLI's own session logs.
-- `codex-migrate-session` — move a Codex conversation to a new workspace path
-  after a repository is moved or renamed.
 
 **Windows and WSL**
 
