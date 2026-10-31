@@ -122,7 +122,9 @@ def run_tmux_attempt(argv: list[str]) -> TmuxResult:
     """Run one tmux sender child, capturing its result line; stderr passes through.
 
     The child decides its own outcome on SIGINT, SIGTERM or SIGHUP, so this
-    process waits for it, and a signal received meanwhile forbids a fallback.
+    process waits for it. A signal received meanwhile turns a refusal into
+    `UNKNOWN interrupted`: nothing was sent, and the caller asked to stop, so
+    neither a fallback nor tmux-message's retry schedule may follow.
     """
     managed = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
     received: list[int] = []
@@ -134,16 +136,17 @@ def run_tmux_attempt(argv: list[str]) -> TmuxResult:
             process = subprocess.Popen(argv, stdout=subprocess.PIPE, text=True)
         except OSError as error:
             print(f"tmux sender could not start: {error}", file=sys.stderr)
-            return TmuxResult("UNKNOWN internal", 3, typed_nothing=not received)
-        stdout, _stderr = process.communicate()
+            result = TmuxResult("UNKNOWN internal", 3, typed_nothing=True)
+        else:
+            stdout, _stderr = process.communicate()
+            if process.returncode < 0:
+                return TmuxResult(_UNRECOGNIZED, EXIT_UNVERIFIED, typed_nothing=False)
+            result = classify_tmux_result(stdout, process.returncode)
     finally:
         for number, handler in previous.items():
             signal.signal(number, handler)
-    if process.returncode < 0:
-        return TmuxResult(_UNRECOGNIZED, EXIT_UNVERIFIED, typed_nothing=False)
-    result = classify_tmux_result(stdout, process.returncode)
     if received and result.typed_nothing:
-        return TmuxResult(result.token, result.exit_code, typed_nothing=False)
+        return TmuxResult("UNKNOWN interrupted", 3, typed_nothing=False)
     return result
 
 

@@ -23,7 +23,8 @@ request (exit 64) or an interrupted send, which are reported to the caller.
 
 **Delivery timing must not depend on which route worked.** A message to a busy
 recipient should reach its running turn, so that "stop, that is the wrong file"
-arrives while it still matters. As of 2026-10-31 every other route does this:
+arrives while it still matters. As of 2026-10-31 every other route that was
+checked does this:
 tmux Enter steers a running Codex, OpenCode or Muse Code turn; Claude Code
 shows input typed during a turn, and the completion of a background listener
 subagent, inside that turn; a Codex Relay listener keeps its parent's turn open

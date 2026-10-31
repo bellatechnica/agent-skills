@@ -105,8 +105,14 @@ class TmuxFirstRouteTests(unittest.TestCase):
             before="os.kill(os.getppid(), signal.SIGINT)\nimport time\ntime.sleep(0.2)",
         )
         result, output, queue = run_route(argv, sender.QueueOutcome.ACCEPTED)
-        self.assertEqual((result, output), (1, "OCCUPIED\n"))
+        # Not OCCUPIED: that would invite tmux-message's retry schedule after a stop request.
+        self.assertEqual((result, output), (3, "UNKNOWN interrupted\n"))
         queue.assert_not_called()
+
+    def test_tmux_sender_that_cannot_start_falls_back_to_the_queue(self) -> None:
+        result, output, queue = run_route(["/nonexistent/tmux-sender"], sender.QueueOutcome.ACCEPTED)
+        self.assertEqual((result, output), (0, "QUEUED\n"))
+        queue.assert_called_once_with(THREAD, MESSAGE)
 
     def test_without_a_pane_the_queue_is_the_route(self) -> None:
         result, output, queue = run_route(None, sender.QueueOutcome.ACCEPTED)
