@@ -101,23 +101,16 @@ The prompt also carries:
   still fire. Tell the session that if one does, it reports it to the
   sender before anything else and saves what the trap changed in its
   work as a patch, so the change can be inspected and undone.
-- Tell the session how to involve the user:
-  - **Larger features** (or whenever the user asked for a plan), unless
-    the handoff already carries a plan the user approved: refine
-    the plan first and present it to the USER for review before
-    implementing — do not start building on the handoff doc alone. Tell
-    the session to run the `plan-upfront` skill for this.
-  - **Everything else**: start directly — the session itself judges
-    when the work is worth stopping. The moment it turns up a real
-    decision, it pauses and asks instead of guessing: gaps in the
-    handoff itself go to the sender (the context holder) at the address
-    the prompt gives; calls the sender cannot settle — product-visible
-    behavior, revising a committed decision — go to the user. Work that never surfaces one
-    runs straight through. Either way it ends with a short RECAP to
-    the user — what changed, key decisions, how it was verified,
-    anything pending. The user does not read the handoff doc; the
-    recap is their record.
-  Say which case applies when writing the prompt.
+- Tell the session how to involve the user. It starts directly and
+  judges for itself when the work is worth stopping, and which skills
+  to use. The moment it turns up a real decision, it pauses and asks
+  instead of guessing: gaps in the handoff itself go to the sender (the
+  context holder) at the address the prompt gives; calls the sender
+  cannot settle — product-visible behavior, revising a committed
+  decision — go to the user. Work that never surfaces one runs straight
+  through. It ends with a short RECAP to the user — what changed, key
+  decisions, how it was verified, anything pending. The user does not
+  read the handoff doc; the recap is their record.
 - Say in the prompt that ownership runs past the merge: once the branch
   lands, the session cleans up its own worktree, branch and scratch
   databases (`new-session` §6) unless the user has noted further work
