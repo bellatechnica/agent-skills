@@ -5,10 +5,9 @@ description: Deliver one message to a Claude Code, Codex, Antigravity CLI, OpenC
 
 # Message another session through tmux
 
-Use `session-message` to choose a native client route when addressing a session
-that has one. This skill remains the guarded tmux sender for a recipient with
-no reachable native address, unsafe native message content, or definite native
-unavailability before an attempt. Its inspection rules still apply on fallback.
+When the recipient also has a native client route, `session-message` decides
+the order between this sender and that route. This skill's rules apply whenever
+this sender is used.
 
 Keystrokes injected into another pane are indistinguishable from its operator
 typing them. Deliver each message through

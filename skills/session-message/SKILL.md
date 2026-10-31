@@ -1,6 +1,6 @@
 ---
 name: session-message
-description: Set up two-way messaging between coding-agent sessions, using Agent Relay by default, native client delivery when reachable, and guarded tmux fallback. Use when launching or coordinating persistent sessions; task ownership stays with the calling workflow.
+description: Set up two-way messaging between coding-agent sessions, using Agent Relay by default, and for direct delivery guarded tmux first with native client delivery as its fallback. Use when launching or coordinating persistent sessions; task ownership stays with the calling workflow.
 ---
 
 # Message between sessions
@@ -26,13 +26,23 @@ second field reports a recipient using Relay's content-free wake watcher
 instead of an MCP wait:
 
 - If either is true, Relay observed a listener. Send no extra notice.
-- If both are false, the payload is still in Relay: read the `agent-relay-message` skill's `wake.md` in full, then send one content-free notice by the route it gives, passing this skill's `scripts/send_native_or_tmux.py` as its native sender. Without a reachable route, report that active wake-up is unverified.
+- If both are false, the payload is still in Relay: read the `agent-relay-message` skill's `wake.md` in full, then send one content-free notice as it describes; the wake helper delivers it in the order of "Deliver to a session directly" below, through this skill's `scripts/send_native_or_tmux.py`. Without a reachable route, report that active wake-up is unverified.
 
 Keep the client-specific listener active or recover it according to `agent-relay-message` while the sessions still need each other.
 
 ## Operate direct mode
 
-Give both sessions the exact native and tmux addresses each can reach. A Claude Code sender uses `SendMessage` for a Claude Code recipient when available. For a reachable Codex recipient, use `scripts/send_native_or_tmux.py --tmux-sender <tmux_send.py> --codex-thread <thread> --shell-safe-text <reviewed-message>`, adding `--tmux-target <pane>` when reachable. The script prints `QUEUED` only after positive Codex queue acceptance; a definite process-start failure selects the guarded tmux sender. Once a queue process starts, an uncertain result prints `DELIVERY_UNVERIFIED native-queue` and must not trigger tmux. The message appears in process arguments: file-sourced, sensitive, or otherwise unsafe text goes through `tmux-message` with its UTF-8 file input. Every ordinary message retains the sender prefix specified by `tmux-message`, even on native transport. A Claude Code sender may select guarded tmux only when `SendMessage` was unavailable before any attempt; an uncertain tool result forbids a second send. A non-Claude sender reaches Claude Code through guarded tmux when available. A positive queue receipt or tmux submit is delivery, not processing; wait for a reply before treating work as done. Do not use Relay opportunistically in this mode or guess a replacement address.
+Give both sessions the exact native and tmux addresses each can reach, and deliver every message as the next section says. The message appears in process arguments on the Codex route: file-sourced, sensitive, or otherwise unsafe text goes through `tmux-message` with its UTF-8 file input, with no native fallback. Every ordinary message retains the sender prefix specified by `tmux-message`, even on native transport. A `SENT`, `QUEUED` or `SendMessage` result is delivery, not processing; wait for a reply before treating work as done. Do not use Relay opportunistically in this mode or guess a replacement address.
+
+## Deliver to a session directly
+
+This order governs a direct-mode message and a Relay wake notice alike. Deliver through the guarded tmux sender first, and use the recipient's native route only as the fallback: tmux reaches a busy recipient's running turn, while `codex queue` holds a message until that turn ends, and a Claude Code session name can change when the session restarts while its pane address survives.
+
+The native route may follow only when no pane is reachable, or when the tmux sender reported that it typed nothing: `OCCUPIED`, `DIALOG`, or `UNKNOWN <class>` other than `UNKNOWN interrupted`. A result that may have reached the recipient — `DELIVERY_UNVERIFIED`, a missing result token, or a token disagreeing with its exit status — forbids any second send by any route, as does an uncertain native result. An invalid request (exit `64`) or an interrupted send is reported, not rerouted.
+
+- **Codex recipient:** run `scripts/send_native_or_tmux.py --tmux-sender <tmux_send.py> --shell-safe-text <reviewed-message>`, adding `--tmux-target <pane>` and `--codex-thread <thread>` for each address that is reachable. It applies the order above and prints one result: the tmux sender's own token; `QUEUED` after positive Codex queue acceptance; `DELIVERY_UNVERIFIED native-queue` once a queue attempt started without positive acceptance; or `UNAVAILABLE no-reachable-route`. A tmux refusal it prints means the queue was unavailable too; follow `tmux-message` for it.
+- **Claude Code recipient:** send through `tmux-message` when the pane is reachable. A Claude Code sender uses `SendMessage` with the exact recipient session name only under the fallback conditions above. A sender without `SendMessage` uses tmux alone.
+- **Any other recipient:** `tmux-message` alone.
 
 ## Tell a new session how to respond
 
