@@ -50,7 +50,9 @@ Answer these from the plan and the repo, not by asking:
 - **Agent**: does the plan or the user call for a different CLI,
   model, or sandbox than this session's?
 
-Then take the cheapest mode that fits. These are defaults, not rules.
+Then take the cheapest mode that fits: the one that spends least on
+briefing and coordination without overloading this session's context.
+These are defaults, not rules.
 
 | Mode | Fits when |
 | --- | --- |
