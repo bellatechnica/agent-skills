@@ -55,4 +55,5 @@ Thumbs.db
 .claude/*.local.*
 CLAUDE.local.md
 .codex/worktrees/
+.agents/worktrees/
 **/do_not_commit/

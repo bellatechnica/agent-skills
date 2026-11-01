@@ -37,8 +37,8 @@ Thumbs.db
 .claude/*.local.*
 CLAUDE.local.md
 
-# Codex
-.codex/worktrees/
+# Agent sessions' worktrees
+.agents/worktrees/
 
 # Machine-local values and secrets
 .env

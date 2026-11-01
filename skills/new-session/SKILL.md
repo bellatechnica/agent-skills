@@ -56,11 +56,16 @@ ambiguous three ways (the branch, the repo root, and a worktree that
 happens to be called `main`):
 
 - **The repo root** (the main checkout, e.g. `/home/me/proj`) — where
-  read-only work runs. Reading here is free and needs no setup.
+  read-only work runs. Reading here is free and needs no setup, except
+  that `.agents/worktrees/` under it holds other sessions' worktrees, as
+  `.claude/worktrees/` does for older ones and those Claude Code's own
+  tool made: never read or search in either but the new session's own.
 - **Another session's worktree** (any linked checkout reported by
-  `git worktree list`, including tool-managed paths such as
-  `<repo>/.claude/worktrees/`) — **off limits entirely, read or
-  write.** These are live workspaces holding uncommitted in-flight
+  `git worktree list`, normally a directory under
+  `<repo root>/.agents/worktrees/` or `<repo root>/.claude/worktrees/`,
+  other than the new session's own)
+  — **off limits entirely, read or write.** These are live workspaces
+  holding uncommitted in-flight
   work that an outside edit corrupts silently. Never let a worktree's
   directory name be mistaken for a branch or for the repo root: if
   one is named after a branch, "based on X" gets read as "inside the
@@ -78,6 +83,23 @@ one. **This session's own worktree is not a target either.** If this
 session is working in one, never phrase the prompt in a way that points
 there — pass the BRANCH to base a new worktree on, plus the absolute
 path of the repo root for reading.
+
+**Where a new worktree goes:** `<repo root>/.agents/worktrees/<new-branch>`,
+whichever client will work in it, never beside the repository, where
+`<new-branch>` is the branch the worktree creates. A detached worktree, such as a reviewer's,
+goes in the same directory under a descriptive name. Before creating
+one, or before launching a session that may create one: if
+`git -C <repo root> check-ignore -q .agents/worktrees/x` exits non-zero,
+add `.agents/worktrees/` to `<repo root>/.git/info/exclude`, which is
+never committed. Create every worktree with git, a subagent's included,
+naming the base explicitly:
+
+    git -C <repo root> worktree add -b <new-branch> <repo root>/.agents/worktrees/<new-branch> <base>
+
+Do not let any client create the worktree itself: as of 2026-10-31,
+Claude Code's, Codex's and Cursor CLI's worktree features each choose
+their own base, Codex's and Cursor's put the worktree outside the
+repository, and Codex's has no branch.
 
 **Which commit does the new worktree start from? Default to the trunk
 (`main`), not this session's branch**: a child based on an unlanded
@@ -146,14 +168,14 @@ yet. When it does:
 - With a brief document and file edits, make the prompt say "create
   your OWN NEW worktree", and name the branch to base it on:
 
-      tmux send-keys -t <session>:<slug> -l '<agent-launch> "Read <brief-path>, then create your OWN NEW git worktree based on branch <branch> and work there. Do not edit any existing linked worktree reported by git worktree list, and do not edit the repo root. <constraints>"'
+      tmux send-keys -t <session>:<slug> -l '<agent-launch> "Read <brief-path>, then create your OWN NEW git worktree at <repo root>/.agents/worktrees/<new-branch>, on a new branch <new-branch> based on branch <base> (a branch name; do not enter any directory named <base> under <repo root>/.claude/worktrees/ or <repo root>/.agents/worktrees/, or any other existing worktree), using git worktree add rather than any built-in worktree tool, and work there. Do not edit, read or search any other linked worktree reported by git worktree list or under <repo root>/.claude/worktrees/ or <repo root>/.agents/worktrees/ than the one you create, and do not edit the repo root. <constraints>"'
       tmux send-keys -t <session>:<slug> Enter
 
   Without either — the whole task in the prompt, no worktree. State the
   read-only rule AND its escape hatch in the same breath, or the second
   half gets invented on the spot:
 
-      tmux send-keys -t <session>:<slug> -l '<agent-launch> "<the full task>. You are in the repo root - read it and run things in it, but do NOT edit any file here, and do NOT touch any existing linked worktree reported by git worktree list. If the work turns into edits, create your OWN NEW worktree first and edit only there. <other constraints>. <who to report to, and how>."'
+      tmux send-keys -t <session>:<slug> -l '<agent-launch> "<the full task>. You are in the repo root - read it and run things in it, but do NOT edit any file here, and do NOT touch, read or search any existing linked worktree reported by git worktree list or anything else under <repo root>/.claude/worktrees/ or <repo root>/.agents/worktrees/ other than the worktree you create below. If the work turns into edits, first create your OWN NEW git worktree at <repo root>/.agents/worktrees/<new-branch>, on a new branch <new-branch> based on branch <base> (a branch name; do not enter any directory named <base>), using git worktree add rather than any built-in worktree tool, and edit only there. <other constraints>. <who to report to, and how>."'
       tmux send-keys -t <session>:<slug> Enter
 
   Mix as needed (a brief with no worktree, a worktree with no brief).
@@ -212,7 +234,7 @@ merely "the merger accepted"):
   then `git -C <repo root> worktree prune`. If the filesystem leaves a
   half-removed directory (this happens on Windows-mounted paths), fix it
   before moving on rather than leaving an unusable entry behind.
-- **Delete the branch** with `git -C <repo root> branch -d <branch>` —
+- **Delete the branch** with `git -C <repo root> branch -d <new-branch>` —
   lowercase `-d`, which refuses when commits are unmerged and is
   therefore the safety check, not a formality. If it refuses,
   something did not land: investigate, never reach for `-D` — except
