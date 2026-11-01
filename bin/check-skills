@@ -32,11 +32,11 @@ done
 
 echo "shared: $shared    private: $private    untriaged: ${#untriaged[@]}"
 
-# The symlink is what makes edits here take effect. Check whichever config
-# directories exist; both CLIs are optional.
-for config in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
-    [ -e "$config" ] || continue
-    target=$(readlink -f "$config")
+# The symlinks are what make edits here take effect. Check whichever config
+# directories exist; each CLI is optional.
+for config in "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.codex/skills"; do
+    [ -e "$config" ] || [ -L "$config" ] || continue
+    target=$(readlink -m "$config")
     if [ "$target" != "$repo_root/skills" ]; then
         echo "WARNING: $config resolves to $target, not $repo_root/skills"
     fi
