@@ -28,7 +28,7 @@ graph BT
     tmux["tmux-message<br/>type one message safely into another agent's pane"]
     sm["session-message<br/>pick and keep the channel between two sessions"]
     ns["new-session<br/>launch an agent in its own tmux window and worktree"]
-    sub{{"subagent<br/>a helper agent inside the current session, from the agent CLI"}}
+    sub{{"subagent<br/>(native agent CLI feature)"}}
     handoff["handoff<br/>transfer a work item and its context to a new session"]
     rs["review-session<br/>keep a reviewer session alive across fix rounds"]
     pu["plan-upfront<br/>draft a plan in its own file for the user to review"]
@@ -50,6 +50,7 @@ graph BT
     coord --> rl
     coord --> pu
     impl --> coord
+    impl --> handoff
     impl --> rl
     impl --> ns
     impl --> sub
@@ -85,8 +86,9 @@ through `session-message`'s delivery script.
 - `new-session` — launch a separate agent session in a tmux window: the agent
   and model, its message channel, its own worktree, resume, and cleanup after
   its branch lands.
-- `handoff` — hand a work item and its context to a new agent session that will
-  own it, in a prompt or a handoff doc.
+- `handoff` — hand a work item and its context to a new agent session, in a
+  prompt or a handoff doc. The new session owns the item unless the calling
+  workflow keeps leading it, as `implement` and `coordinator` do.
 - `review-session` — keep an independent reviewer in a separate agent session
   across fix rounds, closing it once the change reaches its stop level.
 

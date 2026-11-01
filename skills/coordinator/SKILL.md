@@ -101,9 +101,9 @@ databases, a handoff that carries SPEC POINTERS (the design and the
 execution plan, wherever they are tracked, are the contract; the
 handoff holds only the breakdown), the repository's and the user's
 global agent instructions by path, the known traps by name, and the
-reporting channel. See the `handoff` skill for writing the handoff
-and `new-session` for launching the session. The handoff
-prompt states the coordinator's continuing role: the session sends its
+reporting channel. Brief and launch each session with `handoff`,
+keeping the leading role (`handoff` §4). The handoff prompt states the
+coordinator's leading terms: the session sends its
 tips to the coordinator for phase review as `review-loop` describes,
 each with the decisions it made that belong on the decisions list
 (`implement` §5); sends each escalation to the coordinator as it

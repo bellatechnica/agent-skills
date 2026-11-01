@@ -56,7 +56,7 @@ Then take the cheapest mode that fits. These are defaults, not rules.
 | --- | --- |
 | **This session** | Small or medium; context here matters; the user is steering here; room is left in context. |
 | **Subagent** | A bounded, self-contained piece that needs no steering from the user; or keeping this session's context free for review or coordination. Fork when this session's context matters; a fresh agent with a full brief when it does not. Several in parallel only when their files do not overlap. A subagent reports to this session, not the user, and cannot stop to ask the user. |
-| **Separate session** (launched with `new-session`; this session leads it) | Long — hours or many commits; it must outlive this session; or a different CLI, model, or sandbox is wanted. |
+| **Separate session** (briefed and launched with `handoff`; this session leads it) | Long — hours or many commits; it must outlive this session; or a different CLI, model, or sandbox is wanted. |
 | **Several sessions** | The plan splits into streams that can run in parallel. Use the `coordinator` skill when the streams have ordering dependencies, phase gates, shared live resources, or a design someone must hold them to. Use plain parallel separate sessions only when the streams are genuinely independent. |
 | **Something else** | A step only the user can do (a login, a hardware action); a multi-agent workflow the user has explicitly opted into; a scheduled or cloud agent for work that must run later or elsewhere. Or no mode at all: the plan is not ready, and the right move is back to `plan-upfront`. |
 
@@ -138,12 +138,10 @@ Per mode:
   skipped, the decisions it made that belong on the decisions list
   (§5), and its escalations, with the work that depends on them left
   unbuilt). Review is §4's job, not the subagent's.
-- **Separate session**: launch it with `new-session`. This is not a
-  `handoff`: the new session owns its branch, but this session keeps
-  leading — it holds the plan, receives escalations, and gates the
-  merge — and the prompt below says so. The two sessions communicate, so the prompt tells the
-  new session to load `session-message` (`new-session` §1). Write these
-  into the prompt as well:
+- **Separate session**: brief and launch it with `handoff`, keeping
+  the leading role (`handoff` §4): the new session owns its branch, but
+  this session keeps leading — it holds the plan, receives escalations,
+  and gates the merge. Write these leading terms into the prompt:
   - The plan is approved: read the plan file and build it yourself, in
     your own worktree. Do NOT re-plan with `plan-upfront`, and do not
     choose an execution mode again. Before `review-loop`, verify the

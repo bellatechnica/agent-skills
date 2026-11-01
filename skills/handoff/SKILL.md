@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Hand off a work item to a new parallel agent session that takes ownership of it - decide between a prompt and a handoff doc in docs/do_not_commit/handoffs/, write the doc (spec pointers, binding versus advisory requirements, ruled-out options, coordination constraints when shared resources demand them), tell the session how to involve the user, and launch it with new-session. Use when the user wants work handed to another session, or a workflow dispatches a work item a session will own end to end.
+description: Hand a work item and its context to a new parallel agent session - decide between a prompt and a handoff doc in docs/do_not_commit/handoffs/, write the doc (spec pointers, binding versus advisory requirements, ruled-out options, coordination constraints when shared resources demand them), tell the session how to involve the user, and launch it with new-session. By default the new session owns the item and answers to the user; a calling workflow may keep leading it instead. Use when the user wants work handed to another session, or a workflow (implement, coordinator) briefs and launches a session to build something.
 ---
 
 # Hand off work to a parallel session
@@ -10,7 +10,9 @@ directly, it spans hours or many commits, or it must survive this
 session. Subagents live inside the spawning session and report back to
 it, not to the user.
 
-A handoff transfers ownership of a work item to a new session (§4).
+A handoff transfers a work item and its context to a new session.
+Who owns the work afterwards is §4's setting: the new session by
+default, or the sender when a calling workflow keeps leading.
 `new-session` launches it: the agent and model, the message channel,
 the repo root or its own worktree and the base commit, the tmux window,
 resume, and cleanup once its branch has landed. This skill decides what
@@ -129,15 +131,24 @@ Report the launch as `new-session` §4 says. If a coordination signal
 exists, update it (status file or message) as soon as the blocking work
 in this session finishes, so the waiting session can proceed.
 
-## 4. Hands off after the handoff
+## 4. Ownership
 
-The handoff transfers OWNERSHIP. The spawned session owns its branch
-end to end — including reporting readiness to the user and running the
-merge flow itself once the user authorizes it. By default the spawning session
-does not shepherd, batch, or relay other sessions' merges, and does not
-act as a standing manager or message hub for them — unless the handoff
-itself assigns it a continuing role, which the prompt then states.
-Otherwise coordinate only when
+**By default the handoff transfers ownership.** The spawned session
+owns its branch end to end — including reporting readiness to the user
+and running the merge flow itself once the user authorizes it. The
+spawning session does not shepherd, batch, or relay other sessions'
+merges, and does not act as a standing manager or message hub for them.
+
+**A calling workflow may keep leading instead** (`implement`'s
+separate-session mode, `coordinator`). Its prompt then states the
+leading terms: who receives escalations, who checks and signs off on
+the branch, whose word it lands on, and what the session sends back.
+Those terms replace the defaults here and in §2 wherever they differ:
+escalations that §2 would send to the user go to the leader, which
+batches them for the user. Whatever the terms leave unstated keeps its
+default; in particular the recap still goes to the user.
+
+Under the default, coordinate only when
 absolutely necessary: a shared-resource condition from the handoff
 doc's Coordination section (GPU, live DB, services), or a direct conflict
 between sessions. When a spawned session reports READY, relay that to
