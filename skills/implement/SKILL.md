@@ -115,11 +115,6 @@ Rules that hold in every mode:
 - **The plan's verification list travels with the work.** Whoever
   implements gets the plan path and its verification section, and
   states expected numbers before running checks.
-- **Commit order follows the repo**: where it keeps requirement or
-  design documents, the doc commit lands before the code commit that
-  implements it.
-- **Run targeted tests while iterating**; the full suite belongs to
-  the merge gate.
 - **The agent instructions bind everyone.** Implementers and
   reviewers alike follow the repository's agent instructions (its
   AGENTS.md, CLAUDE.md or equivalent) and the user's global ones.

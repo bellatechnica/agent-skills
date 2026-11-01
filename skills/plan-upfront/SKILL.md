@@ -122,9 +122,7 @@ Cover, where applicable:
 - **Enumeration artifacts** (when §2 triggered) — the acceptance list
   and diagrams themselves, or where they will live.
 - **Sequencing** — the order of work and *why*: which orderings are
-  forced by dependencies vs. chosen for risk reduction. If the repo
-  maintains requirement/design docs, the doc commit lands before the
-  code that implements it.
+  forced by dependencies vs. chosen for risk reduction.
 - **Verification** — how we'll know it worked, especially manual or
   hard-to-automate checks. Where §2 triggered, this is the acceptance
   list.
