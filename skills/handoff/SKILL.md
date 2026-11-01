@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Hand off a work item to a new parallel agent session that takes ownership of it - decide between a prompt and a handoff doc in a do_not_commit area, write the doc (spec pointers, binding versus advisory requirements, ruled-out options, coordination constraints when shared resources demand them), tell the session how to involve the user, and launch it with new-session. Use when the user wants work handed to another session, or a workflow dispatches a work item a session will own end to end.
+description: Hand off a work item to a new parallel agent session that takes ownership of it - decide between a prompt and a handoff doc in docs/do_not_commit/handoffs/, write the doc (spec pointers, binding versus advisory requirements, ruled-out options, coordination constraints when shared resources demand them), tell the session how to involve the user, and launch it with new-session. Use when the user wants work handed to another session, or a workflow dispatches a work item a session will own end to end.
 ---
 
 # Hand off work to a parallel session
@@ -34,30 +34,23 @@ on which base commit, is `new-session` §2.
 
 ## 1. Write the handoff doc first (when the size warrants one)
 
-Into a `do_not_commit` area of the MAIN checkout (visible to every
-session regardless of worktree), named `handoff-<date>-<slug>.md`. The
-`handoff-` prefix is what distinguishes it from a session's own working
-plan for the same subject, which may sit alongside it.
-
-**Where exactly: follow the directory's own convention, and look before
-writing.** A `do_not_commit` area that has grown past a few dozen files
-usually sorts them into folders by KIND — `handoffs/`, `findings/`,
-`designs/` — in which case the doc goes in the one for handoffs, e.g.
-`docs/do_not_commit/handoffs/handoff-2026-03-14-flaky-tests.md`. Where
-there are no folders, the top level is right. `ls` the directory and
-match what is there.
+Into `docs/do_not_commit/handoffs/handoff-<date>-<slug>.md` in the MAIN
+checkout (visible to every session regardless of worktree), unless the
+repository already keeps handoff docs elsewhere. The `handoff-` prefix
+is what distinguishes it from a session's own working plan for the
+same subject.
 
 The doc is best-effort context, not a self-sufficient brief: carry what
 the receiver could not reconstruct or think to ask about, and leave the
 rest to the reply channel (section 2).
 
 - **Spec pointers, not spec**: the design and plan documents are the
-  spec — committed files, files in the main checkout's `do_not_commit`
-  area, or a published document cited by its link; list exactly which
+  spec — committed files, files in the main checkout's
+  `docs/do_not_commit/`, or a published document cited by its link; list exactly which
   files/sections. The handoff doc holds the breakdown.
 - **Name the design documents the work touches — required, every
   handoff.** List the relevant ones — under the repo's designs area, in
-  the main checkout's `do_not_commit` area, or published and cited by
+  the main checkout's `docs/do_not_commit/`, or published and cited by
   link — or state that none apply, and name them as candidates to rule
   in or out, not assertions ("plausibly relevant, not checked" is
   honest and useful).

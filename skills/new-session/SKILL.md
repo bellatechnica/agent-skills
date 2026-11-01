@@ -258,7 +258,8 @@ needs no watch.
   terminal.
 - On a stall, before waking the session, check whether the
   deliverable already EXISTS unrelayed — in the main checkout's
-  `do_not_commit/` area or as commits on the session's branch:
+  `docs/do_not_commit/` (or wherever the session was told to write it)
+  or as commits on the session's branch:
   sessions repeatedly finish the artifact, idle, and never send the
   message. The fix is to read the file and proceed, not to ask for it
   again. Judge by the artifact, not by the session's own summary: a

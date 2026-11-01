@@ -22,12 +22,12 @@ briefing than on building.
   cited by its link; a file inside a worktree is off limits to other
   sessions. A
   plan that lives only in this conversation is written to the main
-  checkout's uncommitted area (its `do_not_commit/`); a plan file
+  checkout's `docs/do_not_commit/plans/`, as `plan-upfront` names it; a plan file
   inside a worktree is moved, not copied, to the same relative path in
   the main checkout, so only one version exists. Every brief cites that
   one path.
-- **Authorization to build.** `plan-upfront` stops after saving the
-  plan; the user's request to build is the authorization.
+- **Authorization to build.** `plan-upfront` stops once the plan file
+  is written; the user's request to build is the authorization.
 - **The plan still holds.** Re-read it against the current code. If
   the trunk moved under it or a premise is now false, say so and fix
   the plan with the user first; no mode rescues a stale plan.

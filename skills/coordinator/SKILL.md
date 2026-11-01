@@ -35,9 +35,10 @@ Where each document goes:
   re-run `plan-upfront` for an amendment.
 - **Execution plans** — how a design is split into phases and streams,
   their order, and their dependencies — go in the main checkout's
-  `do_not_commit/`.
-- **The status file** (§1) goes there too. Confirm that area is
-  ignored before the first write, as `plan-upfront` describes.
+  `docs/do_not_commit/plans/`.
+- **The status file** (§1) goes in its `docs/do_not_commit/status/`.
+  Confirm that area is ignored before the first write, as
+  `plan-upfront` describes.
 
 Nothing the coordinator writes lives inside a worktree.
 
@@ -52,8 +53,8 @@ a genuine decision.
 
 ## 1. The status file
 
-Keep one short status file in the main checkout's `do_not_commit/`,
-holding only what a resumed coordinator needs after a compaction or
+Keep one short status file in the main checkout's
+`docs/do_not_commit/status/`, holding only what a resumed coordinator needs after a compaction or
 restart: each stream's phase and state (dispatched, in review, awaiting approval of major decisions, draft PR or reported
 ready, merge authorized, landed, closed); the session, window, worktree and branch for each;
 open items with their owner; rulings, one dated line each — the
@@ -71,7 +72,7 @@ imprecisions.
 Some repos carry a per-workstream record of defects that ESCAPED the
 implementing session's own review and testing — caught downstream by the
 coordinator's review, the merger's gate, production, or the user. Look for
-a `code-reviews/` (or similarly-named) directory beside the status file and READ
+a `code-reviews/` (or similarly-named) directory in `docs/do_not_commit/` and READ
 ITS README FIRST: it states that repo's scope, filename convention, and
 markers. Where one exists, maintaining it for your workstream is the
 coordinator's job, appended as findings land rather than reconstructed at

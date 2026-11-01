@@ -157,7 +157,7 @@ listing both neutrally:
 ## Deliverable
 
 A findings doc, in the project's gitignored scratch location
-(`do_not_commit/` or equivalent), with:
+(`docs/do_not_commit/findings/` or equivalent), with:
 
 - What's actually present, in tracked files and in history, separated
   by severity.

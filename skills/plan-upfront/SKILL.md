@@ -1,16 +1,38 @@
 ---
 name: plan-upfront
-description: Plan a task before implementation - explore, surface the requirements upfront (with enumeration artifacts for subsystems whose promises span time or failures), ask few but sufficient question rounds, then save the approved plan where the repository keeps plans (a design in the do_not_commit area, with the user asked where to publish it). Use when the user wants a written plan before any implementation.
+description: Plan a task before implementation - explore, surface the requirements upfront (with enumeration artifacts for subsystems whose promises span time or failures), ask few but sufficient question rounds, drafting the plan in its file from the start (docs/do_not_commit/plans/ or designs/ unless the repository keeps them elsewhere). Use when the user wants a written plan before any implementation.
 argument-hint: <task to plan>
 ---
 
-Produce a written, approved plan for the task the user described. Works
-for both project-level plans and small ones. This skill does NOT use
-Plan Mode — the flow may write markdown (the plan file, enumeration
-artifacts) — so the guard is discipline, not the mode: until the user
-approves the plan, write nothing except those planning documents, and
-do not implement anything unless the user explicitly says to after
-approval.
+Produce a written plan for the task the user described. Works for both
+project-level plans and small ones. This skill does NOT use Plan Mode —
+the flow writes markdown (the plan file, enumeration artifacts) — so the
+guard is discipline, not the mode: write nothing except those planning
+documents, and implement nothing until the user asks for it to be built.
+
+## 0. Start the plan file
+
+Create the plan file first and draft in it from then on: findings, the
+questions and their answers, and the plan itself all go into the file
+as they arise, revised in place rather than presented in the
+conversation and written out at the end.
+
+- **A design** — when the user or the calling skill calls the document
+  one — goes to `docs/do_not_commit/designs/YYYY-MM-DD-<slug>.md` in the
+  main checkout; **a plan** goes to
+  `docs/do_not_commit/plans/YYYY-MM-DD-<slug>.md`. Where the repository
+  already keeps uncommitted plans or designs elsewhere, follow its
+  convention instead; a committed plans folder is not a draft's home.
+- Never inside a worktree: other sessions cannot read it there, and it
+  is deleted with the worktree.
+- Before the first write, confirm the file is ignored with
+  `git check-ignore -v <path>`. Where it is not, add the uncommitted
+  area that holds it (`docs/do_not_commit/`, or the repository's own
+  equivalent) to `.git/info/exclude`, never to the tracked
+  `.gitignore`, and check again; a tracked rule outranks that file, so
+  if it is still not ignored, ask the user where to put it.
+- Never overwrite an existing file — if the name collides, add a `-2`
+  style suffix.
 
 ## 1. Explore first
 
@@ -59,7 +81,7 @@ would change the plan and ask them all together via AskUserQuestion
 (consecutive calls in the same round if more than 4). Give each
 question a recommended default, listed first and marked
 "(Recommended)". Decisions too minor for a question go in the plan's
-**Assumptions** section, where the user can veto them at approval.
+**Assumptions** section, where the user can veto them.
 
 More rounds are allowed only when the task genuinely creates them:
 
@@ -76,11 +98,13 @@ CREATED by the previous round's answers, not merely deferred from it.
 After the last round, do not ask again unless an answer genuinely
 invalidates the premise of the task.
 
-## 4. Draft the plan
+## 4. Write the plan
 
-Focus on high-level ideas and non-obvious decisions — not mechanical
-steps. Keep it as concise as reasonable for the size of the task;
-small tasks get small plans, and sections that don't apply are
+Write it into the plan file, replacing the working notes it has
+collected. Carry every answer into Key decisions or Assumptions, and
+keep any text the user wrote in the file. Focus on high-level ideas and non-obvious decisions — not
+mechanical steps. Keep it as concise as reasonable for the size of the
+task; small tasks get small plans, and sections that don't apply are
 omitted. Concrete `file:line` references are encouraged; step-by-step
 edit instructions are not.
 
@@ -107,47 +131,21 @@ Cover, where applicable:
 - **Risks / open questions** — known unknowns that may surface during
   implementation.
 
-## 5. Get approval
+## 5. Hand it over
 
-Present the full plan in the conversation and ask the user to approve
-it. If the user requests revisions or edits the plan, incorporate
-them — the approved version is the plan.
+Tell the user where the plan file is, then **stop**, and ask nothing:
+the user reviews the file in their own time, and questions, comments
+and edits all go into the same file. Do not begin implementing unless
+the user explicitly asks; that request accepts the plan as it then
+stands, and the `implement` skill takes it from there.
 
-## 6. Save the approved plan
-
-Immediately after approval:
-
-1. Write the final approved plan (including any revisions and edits
-   from the approval step) to its file. Never save inside a worktree:
-   other sessions cannot read it there, and it is deleted with the
-   worktree.
-   - **A design** — when the user or the calling skill calls the
-     document one — goes to the main checkout's `do_not_commit/` area,
-     following that area's folder convention, named
-     `YYYY-MM-DD-<slug>.md`. Before the first write, confirm the area
-     is ignored with `git check-ignore -v <path>`; where it is not,
-     create it at the main checkout's root and ignore it in
-     `.git/info/exclude`, never in the tracked `.gitignore`.
-   - **A plan** goes where the repository keeps plans, following its
-     naming convention; where it has none, to `plans/YYYY-MM-DD-<slug>.md`
-     at the main checkout's root.
-
-   Create the directory if needed. Never overwrite an existing file —
-   if the name collides, add a `-2` style suffix.
-2. For a design, ask the user where it should live beyond that local
-   copy: in a repository where changes land by local merge, whether to
-   commit it to the repo's design-docs location; in a pull-request
-   repository, whether to publish it to a document tool they use
-   (Google Docs, Notion, or similar). If they choose to commit it,
-   move the file (do not copy it) to that location on a branch of its
-   own, in a worktree of its own, so only one version exists, and land
-   it through the repository's usual merge flow — the user's choice to
-   commit it is the authorization. Later amendments land the same way.
-   If they choose a document tool, publish it there, write the link at
-   the top of the local file, and treat the published document as the
-   design from then on: amendments go there, and the local file keeps
-   only the link. If it stays local, write "stays local" at the top of
-   the file.
-3. Tell the user where the plan was saved, then **stop**. Do not begin
-   implementing unless the user explicitly asks. When they do, the
-   `implement` skill takes it from there.
+Once the user has accepted a design (says it is done, or asks for it
+to be built), ask where it should live beyond the local file: committed
+to the repository's design-docs folder (`docs/designs/` where there is
+none), published to a document tool the user names, or kept local. To
+commit it, move the file (do not copy it) on a branch and worktree of
+its own and land it through the repository's usual merge flow; the
+user's choice is the authorization, and later revisions land the same
+way. To publish it, put the link at the top of the local file and amend
+the published copy from then on. Otherwise write "stays local" at the
+top.
