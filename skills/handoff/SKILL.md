@@ -103,14 +103,17 @@ The prompt also carries:
   work as a patch, so the change can be inspected and undone.
 - Tell the session how to involve the user. It starts directly and
   judges for itself when the work is worth stopping, and which skills
-  to use. The moment it turns up a real decision, it pauses and asks
-  instead of guessing: gaps in the handoff itself go to the sender (the
-  context holder) at the address the prompt gives; calls the sender
-  cannot settle — product-visible behavior, revising a committed
-  decision — go to the user. Work that never surfaces one runs straight
-  through. It ends with a short RECAP to the user — what changed, key
-  decisions, how it was verified, anything pending. The user does not
-  read the handoff doc; the recap is their record.
+  to use. When the sender wants a plan reviewed by the user before
+  building, the task says so, and the session plans first and builds
+  once the user approves the plan. The moment it turns up a real
+  decision, it pauses and asks instead of guessing: gaps in the handoff
+  itself go to the sender (the context holder) at the address the
+  prompt gives; calls the sender cannot settle — product-visible
+  behavior, revising a committed decision — go to the user. Work that
+  never surfaces one runs straight through. It ends with a short RECAP
+  to the user — what changed, key decisions, how it was verified,
+  anything pending. The user does not read the handoff doc; the recap
+  is their record.
 - Say in the prompt that ownership runs past the merge: once the branch
   lands, the session cleans up its own worktree, branch and scratch
   databases (`new-session` §6) unless the user has noted further work
