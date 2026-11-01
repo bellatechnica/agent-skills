@@ -20,7 +20,13 @@ These rules bind anyone, human or agent, who writes or edits a skill under
   restated copy drifts from the skill that owns it, and the reader follows
   whichever copy it read last.
 - **Do not restate the agent instructions.** A rule that belongs in the
-  user's global agent instructions is not repeated in a skill. Skills are
-  shared and may run under a different global file, so where a skill depends
-  on such a rule it points at it generically ("follow any merge rules in the
-  agent instructions") rather than spelling it out.
+  user's global agent instructions is not repeated in a skill: skills are
+  shared, so a copy imposes one user's rules on every user and drifts from, or
+  contradicts, the global file actually loaded. Usually a skill does not point
+  at those rules either: a session follows its agent instructions without
+  being told to. Point at them generically only where missing one would be
+  costly: landing a change points at any merge rules, as `implement` does. A
+  prompt or brief for another session or subagent always names the
+  instruction files by path and says they bind, because that session may run
+  under a different global file or none; `implement` and `review-loop` do
+  this.
