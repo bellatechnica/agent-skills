@@ -19,7 +19,10 @@ Most of these skills are about splitting work across agent sessions and
 keeping those sessions in touch. Base skills are at the top, and each arrow
 points from a skill to one it calls directly. Every skill that launches or
 messages a session also uses `session-message` directly; of those arrows only
-`new-session`'s is drawn.
+`new-session`'s is drawn. The dotted arrow is not a call: you usually write a
+plan with `plan-upfront`, then build it with `implement`. `coordinator` also
+writes any new design it needs mid-workstream with `plan-upfront`. Every skill
+can also be run on its own.
 
 ```mermaid
 ---
@@ -39,7 +42,7 @@ graph BT
     sub{{"<b>subagent</b><br/><i>(native agent CLI feature)</i>"}}
     handoff["<b>handoff</b><br/><i>transfer a work item and its context to a new session</i>"]
     rs["<b>review-session</b><br/><i>keep a reviewer session alive across fix rounds</i>"]
-    pu["<b>plan-upfront</b><br/><i>draft a plan in its own file for the user to review</i>"]
+    pu["<b>plan-upfront</b><br/><i>settle requirements and decisions before any code is written</i>"]
     rl["<b>review-loop</b><br/><i>review a change until it is good enough</i>"]
     coord["<b>coordinator</b><br/><i>run several implementing sessions toward one design</i>"]
     impl["<b>implement</b><br/><i>build an approved plan, choosing how to execute it</i>"]
@@ -56,12 +59,12 @@ graph BT
     coord --> handoff
     coord --> ns
     coord --> rl
-    coord --> pu
     impl --> coord
     impl --> handoff
     impl --> rl
     impl --> ns
     impl --> sub
+    pu -. then .-> impl
 
     classDef external stroke-dasharray: 4 4
     class relay,arm external
@@ -102,9 +105,9 @@ through `session-message`'s delivery script.
 
 **Planning, building and reviewing**
 
-- `plan-upfront` — explore the task, surface the requirements, ask a few
-  rounds of questions, and draft the plan in its own file for review before
-  any code is written.
+- `plan-upfront` — settle the requirements and decisions before any code is
+  written: explore the task, surface the requirements, ask a few rounds of
+  questions, and draft the plan for review.
 - `review-loop` — iterate on a finished change with a reviewer until it is
   good enough for the cost of a mistake in it, choosing how strict to be (one
   pass, no real defects, or fully clean) and who reviews.
