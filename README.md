@@ -206,7 +206,9 @@ reports the blocker.
 
 The server, the `agent-relay-message` skill that drives it, and the
 instructions for running both, are in the
-[agent-relay](https://github.com/bellatechnica/agent-relay) repository. Install
+[agent-relay](https://github.com/bellatechnica/agent-relay) repository; start
+with its [Install and run](https://github.com/bellatechnica/agent-relay#install-and-run)
+section. Install
 that skill's whole directory, not only its `SKILL.md` (the link above does),
 alongside the MCP server: its per-client listener rules, its instructions for sending a wake
 notice, and its helper scripts are separate files in that directory and its
