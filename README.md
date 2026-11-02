@@ -22,19 +22,27 @@ messages a session also uses `session-message` directly; of those arrows only
 `new-session`'s is drawn.
 
 ```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 420
+    padding: 16
+    nodeSpacing: 40
+    rankSpacing: 60
+---
 graph BT
-    relay[("Agent Relay server<br/>durable mailbox between sessions")]
-    arm["agent-relay-message<br/>register, send, listen and acknowledge on the relay"]
-    tmux["tmux-message<br/>type one message safely into another agent's pane"]
-    sm["session-message<br/>pick and keep the channel between two sessions"]
-    ns["new-session<br/>launch an agent in its own tmux window and worktree"]
-    sub{{"subagent<br/>(native agent CLI feature)"}}
-    handoff["handoff<br/>transfer a work item and its context to a new session"]
-    rs["review-session<br/>keep a reviewer session alive across fix rounds"]
-    pu["plan-upfront<br/>draft a plan in its own file for the user to review"]
-    rl["review-loop<br/>review a change until it is good enough"]
-    coord["coordinator<br/>run several implementing sessions toward one design"]
-    impl["implement<br/>build an approved plan, choosing how to execute it"]
+    relay[("<b>Agent Relay server</b><br/><i>durable mailbox between sessions</i>")]
+    arm["<b>agent-relay-message</b><br/><i>register, send, listen and acknowledge on the relay</i>"]
+    tmux["<b>tmux-message</b><br/><i>type one message safely into another agent's pane</i>"]
+    sm["<b>session-message</b><br/><i>pick and keep the channel between two sessions</i>"]
+    ns["<b>new-session</b><br/><i>launch an agent in its own tmux window and worktree</i>"]
+    sub{{"<b>subagent</b><br/><i>(native agent CLI feature)</i>"}}
+    handoff["<b>handoff</b><br/><i>transfer a work item and its context to a new session</i>"]
+    rs["<b>review-session</b><br/><i>keep a reviewer session alive across fix rounds</i>"]
+    pu["<b>plan-upfront</b><br/><i>draft a plan in its own file for the user to review</i>"]
+    rl["<b>review-loop</b><br/><i>review a change until it is good enough</i>"]
+    coord["<b>coordinator</b><br/><i>run several implementing sessions toward one design</i>"]
+    impl["<b>implement</b><br/><i>build an approved plan, choosing how to execute it</i>"]
 
     arm --> relay
     sm --> arm
