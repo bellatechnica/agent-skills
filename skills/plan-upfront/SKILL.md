@@ -63,8 +63,8 @@ save review depth for the design-specific residue.
   list — drawing forces the state × event enumeration prose skips.
 - **An interference matrix**: everything that writes × everything
   holding a plan or snapshot in flight, each cell naming its guard.
-- **A toy simulator** for protocol designs: about 100 lines over a
-  five-node example, run against adversarial scenarios.
+- **A toy simulator** for protocol designs, run against adversarial
+  scenarios.
 - **A test-double fidelity review**, once per double: list the
   properties the double has that production lacks (determinism, speed,
   availability, zero cost) and ask which mechanisms silently depend on

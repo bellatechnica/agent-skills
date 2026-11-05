@@ -63,9 +63,8 @@ section or durable message that carries it; and the next action. Do not restate 
 design or the execution plan — link them. Update it at each state
 change, and read it first on resume; memory holds only the pointer to
 it. A correction supersedes the old line with a note rather than
-rewriting it, and a ruling is worded precisely enough to re-derive —
-implementing sessions build exactly what a ruling says, including its
-imprecisions.
+rewriting it, and a ruling is worded precisely enough to re-derive,
+because implementing sessions build exactly what it says.
 
 ## 1a. The escape record, where the repo keeps one
 
@@ -88,11 +87,7 @@ and it belongs in the status file; this record measures what the downstream nets
 catch that self-testing missed.
 
 Always record two entry kinds that are easy to skip: an instrument that
-could not fail (a guard polling the wrong id space, a test asserting the
-defect its name disclaims, a zero from a switched-off collector), and the
-coordinator's own escapes (an imprecise ruling, a number carried without
-its predicate, a bound set against the likely figure instead of the plan's
-ceiling).
+could not fail, and the coordinator's own escapes.
 
 ## 2. Dispatch
 
@@ -172,25 +167,17 @@ affected session.
 ## 5. Rule
 
 - When an implementer proposes deviating from your ruling with a
-  cheaper shape, hear it: prefer the by-construction fix that kills
-  the class over the by-compensation fix that patches the instance —
-  conditioned on verifications named in advance, with fallback to
-  the ruled shape if any verification shows real cost.
-- Mechanism before fix, with a stop condition sized in advance. The
-  diagnosis regularly flips who fixes it, where, or whether anything
-  is broken — a "defect" can be a carve-out working as designed, and
-  a "pass" can be an instrument too blind to fail.
+  cheaper shape, hear it. Prefer a fix that removes the class of defect
+  over one that patches the instance, accepted on verifications named in
+  advance, with fallback to the ruled shape if any shows real cost.
 - Escalate decisions to the user only as `implement` §3's "Decide or
   escalate" sends them there — a major decision with a real
   alternative — batched and timed as it describes. Rule
   yourself on every other decision, and report it on the decisions
   list as that section says. Stall escalation (§6) is separate.
-- Prefer prediction over disclaimer: if a surprise is knowable before
-  the run, the plan lists it as an item; a disclaimer is the fallback
-  only when prediction is genuinely not computable.
 - Adopt implementers' good arguments explicitly and verbatim into the
-  ruling or design they shaped ("never build on an invariant the roadmap intends to
-  remove") — cited principles compound; unattributed ones evaporate.
+  ruling or design they shaped: cited principles compound; unattributed
+  ones evaporate.
 
 ## 6. Watch and message
 
@@ -215,13 +202,10 @@ landed and verified — the trunk contains the branch's changes
 squash or rebase merge), not an acceptance message — smokes green
 to their pre-stated numbers, the implementing
 session's recap sent TO THE USER (who does not read coordination
-traffic), and cleanup verified — worktree removed after a
-merged-and-empty-diff check, branch deleted with the refusing form
-(after a squash or rebase merge, which the refusing form cannot see,
-the coordinator cites the merged PR and the implementing session then
-deletes the branch with `-D`),
-scratch databases dropped only when positively attributable to that
-session. Then the status file records the close.
+traffic), and the implementing session's cleanup verified against
+`new-session` §6 (after a squash or rebase merge, the coordinator cites
+the merged PR the branch deletion relies on). Then the status file
+records the close.
 
 **Ask "is any spawned session closeable?" on every liveness poll and at
 every phase close, not only when the user asks.** A session that looks
