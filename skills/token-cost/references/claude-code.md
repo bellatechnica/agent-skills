@@ -1,6 +1,6 @@
 # Claude Code Transcript Accounting
 
-Use a command shaped like the following. The rates shown are dated examples as of 2026-08-04: cache read is 0.1x input, a 5-minute cache write 1.25x input, and a 1-hour cache write 2x input. Refresh them from current Anthropic pricing before every real report.
+Use a command shaped like the following. The rates shown are dated examples as of 2026-08-04: cache read is 0.1x input, a 5-minute cache write 1.25x input, and a 1-hour cache write 2x input.
 
 ```bash
 python3 <skill-dir>/scripts/claude_token_cost.py \

@@ -1,6 +1,6 @@
 # Codex Rollout Accounting
 
-Use a command shaped like the following. The shown model mapping, rates, and multipliers are dated examples as of 2026-08-09; refresh them before every real report.
+Use a command shaped like the following. The shown model mapping, rates, and multipliers are dated examples as of 2026-08-09.
 
 ```bash
 python3 <skill-dir>/scripts/codex_token_cost.py \
@@ -37,4 +37,4 @@ The script implements the non-obvious safeguards:
 
 ## Dated model mappings
 
-As dated evidence, OpenAI's official [July 30, 2026 announcement](https://x.com/OpenAI/status/2082878180478910571) identifies the current Codex Auto Review model as GPT-5.6 Luna. If that announcement is still current, map `codex-auto-review` to `gpt-5.6-luna`; do not freeze this mapping permanently.
+As dated evidence, OpenAI's official [July 30, 2026 announcement](https://x.com/OpenAI/status/2082878180478910571) identifies the current Codex Auto Review model as GPT-5.6 Luna. If that announcement is still current, map `codex-auto-review` to `gpt-5.6-luna`.

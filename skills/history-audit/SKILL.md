@@ -24,8 +24,6 @@ found.
   finishing the rest of the audit. Rotation precedes any rewrite; a
   rewrite does not un-leak a key that was ever pushed anywhere
   reachable.
-- Findings go into the project's gitignored scratch location, never
-  into a tracked file.
 
 ## Method
 
@@ -35,19 +33,14 @@ found.
   count for the main line if relevant.
 - `git worktree list`, `git branch -a` — note which branches currently
   have no worktree.
-- Stale refs: `git show-ref | grep remotes` cross-checked against
-  `.git/config` (`grep '\[remote'`) — a remote-tracking ref with no
-  matching config section is orphaned; its own reflog
-  (`git reflog show <ref>`) usually names exactly how it was created
-  (e.g. a self-fetch `fetch . main:refs/remotes/x/main`, not a real
-  remote).
+- Stale refs: a remote-tracking ref with no matching remote in
+  `.git/config` is orphaned; its reflog usually shows how it was
+  created.
 - Merge strategy: merge commits present, or rebase-only?
-- **Re-run the worktree/branch listing again near the end of the
-  audit and diff against the first snapshot.** A repo under active
-  multi-session use moves. If it moved — a worktree appeared or
-  vanished, a branch tip changed, `main` itself advanced — that is
-  direct, observed evidence for the coordination-cost argument later,
-  not something to describe as hypothetical.
+- **Report whether the repository moved during the audit**
+  (worktrees, branch tips, `main`). Observed movement is evidence for
+  a rewrite's coordination cost; report it as observed, not
+  hypothetical.
 
 ### 2. For the named term(s) — the vendor name, old product name, whatever prompted the audit
 
@@ -72,30 +65,20 @@ this section ever disagree about what counts, `never-commit` is the
 definition and this is the search.
 
 For each class in `never-commit`, search tracked files (`git grep`) AND
-history (`git log --all -S/-G`) with its signals, and read every hit's
-diff past its false positive before classifying it. History-specific
-additions:
+history (`git log --all -S/-G`) with its signals, classifying each
+hit as §2 does. History-specific additions:
 
-- **Identity in commit metadata**: list every author AND committer
-  email across all refs (`git log --all --format='%ae%n%ce' | sort -u`)
-  and check each against the project's approved outbound identity; ask
-  if none is named. Search content for personal email domains (gmail,
-  yahoo, outlook, qq, 163 and the like), and ask for the project's
-  sensitive identifiers if none are known.
+- **Identity in commit metadata**: check every address that
+  `never-commit`'s identity signal lists against the project's
+  approved outbound identity. Ask for that identity, and for the
+  project's sensitive identifiers, when none are named.
 - **Third-party account identifiers**: confirm they never reached
   tracked files or history, even when they live in a gitignored local
   directory.
-- **Fixtures**: flag long foreign-language or domain-specific text
-  blocks in test and fixture files, and hand an uncertain call to the
-  fixture's author.
 - **Absolute local paths**: report them even where the project's
-  convention for deployment-specific values covers them, after saying
-  what that convention implies.
-- **Hash citations**: sweep docstrings and comments too, not just docs.
-  Resolve each candidate with `git log -1 <hash>` (or
-  `git cat-file -t <hash>` for exact-length checks). Every resolvable
-  citation stops resolving after a rewrite and counts toward its price
-  (§5).
+  convention for deployment-specific values covers them.
+- **Hash citations**: every one that resolves stops resolving after a
+  rewrite; count them toward its price (§4).
 
 ### 3b. Traps that make a search lie
 
@@ -120,12 +103,7 @@ commits by author date (`git log --since/--until`) or subject
 untracked record citing one (boards, handoff docs, scratch output) is
 dangling until re-anchored this way.
 
-### 4. Document the negative, not just the positive
-
-For every "0 matches" / "clean" result, state the exact command used
-in the findings doc, so the next reader can re-run it.
-
-### 5. Price a rewrite honestly before recommending one
+### 4. Price a rewrite honestly before recommending one
 
 - Blast radius (§2).
 - Every ref that needs updating: branches with a worktree, branches
@@ -136,7 +114,7 @@ in the findings doc, so the next reader can re-run it.
   this working directory keeps the old blobs regardless of what
   happens here.
 
-### 6. Recommend, don't just enumerate
+### 5. Recommend, don't just enumerate
 
 Default order — argue for the one that fits the findings, rather than
 listing both neutrally:
@@ -146,7 +124,7 @@ listing both neutrally:
    one normal commit through the project's normal review path.
 2. **Full rewrite** (`git filter-repo`, never `filter-branch`) — only
    when something found is genuinely sensitive, or the requester
-   insists after seeing the priced cost from §5. Coordinate through
+   insists after seeing the priced cost from §4. Coordinate through
    the project's standing merge/release process if it has one; never
    run it solo, and never as part of the same pass that's still
    auditing. **Execution is its own procedure** (scoping, an
@@ -161,7 +139,8 @@ A findings doc, in the project's gitignored scratch location
 
 - What's actually present, in tracked files and in history, separated
   by severity.
-- The exact command used for every clean result.
+- The exact command used for every clean result, so the next reader
+  can re-run it.
 - The rewrite cost priced for *this* repo specifically, not a generic
   estimate.
 - A recommendation, argued from the findings, not a bare options list.

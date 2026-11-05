@@ -5,9 +5,11 @@ description: Turn a project in WSL into a managed systemd service, keep the WSL 
 
 # Creating WSL services
 
-Machine-specific state (networking mode, existing units, scheduled tasks,
-allowed ports) belongs in project memory, not here — check memory first,
-then verify on the machine; don't assume.
+Machine-specific state (networking mode, existing units, firewall rules,
+scheduled tasks, allowed ports) belongs in project memory, not here —
+check memory first, then verify on the machine; don't assume. Extend an
+existing Hyper-V firewall rule or portproxy refresh task (§3) rather
+than creating a second.
 
 ## 0. Detect the machine's setup
 
@@ -15,8 +17,13 @@ then verify on the machine; don't assume.
 systemctl is-system-running                  # systemd enabled in this distro?
 loginctl show-user $USER | grep Linger       # units start at boot / survive logout?
 ip -4 addr show eth0                         # 172.16-31.x.x => NAT; LAN-subnet address => mirrored
-cat "$(wslpath "$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r')")/.wslconfig" 2>/dev/null
+cat "$(wslpath "$(cmd.exe /c 'echo %USERPROFILE%' | tr -d '\r')")/.wslconfig"
 ```
+
+If a Windows executable (`cmd.exe`, `powershell.exe`, `schtasks.exe`) is
+not found, this shell does not have Windows' PATH appended: call it by
+full path under `/mnt/c/Windows/System32/` (`powershell.exe` is at
+`/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`).
 
 Enable what's missing: `loginctl enable-linger $USER`; systemd via
 `[boot] systemd=true` in `/etc/wsl.conf` (needs a WSL restart).
@@ -24,8 +31,8 @@ Enable what's missing: `loginctl enable-linger $USER`; systemd via
 ## 1. systemd user unit
 
 Create `~/.config/systemd/user/<name>.service`, keep a copy in the repo
-(e.g. `scripts/<name>.service`), and look at existing units in that
-directory first to match local conventions:
+(e.g. `scripts/<name>.service`), and match the conventions of existing
+units in that directory:
 
 ```ini
 [Unit]
@@ -77,8 +84,8 @@ Verify with `pgrep -f 'sleep infinity'` inside WSL.
 
 ## 3. LAN exposure
 
-Either way, the service binds `0.0.0.0` and Windows Firewall needs an
-inbound rule for the port (elevated, see §4):
+Either way, Windows Firewall needs an inbound rule for the port
+(elevated, see §4):
 
 ```powershell
 netsh advfirewall firewall add rule name=<Name><port> dir=in action=allow protocol=TCP localport=<port>
@@ -90,8 +97,8 @@ A Windows 11 22H2 machine can accept the setting and silently stay on NAT, so
 confirm the mode from step 0's `eth0` address after a WSL restart, never from
 `.wslconfig`. Once mirrored, WSL shares the host's interfaces: a `0.0.0.0`
 bind is LAN-reachable with no proxy. Additionally allow the port in the
-Hyper-V firewall (one rule can carry several ports; extend an existing one
-with `Set-NetFirewallHyperVRule` before creating a new one):
+Hyper-V firewall (one rule can carry several ports;
+`Set-NetFirewallHyperVRule` extends one):
 
 ```powershell
 New-NetFirewallHyperVRule -Name <Name> -DisplayName "..." -Direction Inbound `
@@ -118,8 +125,7 @@ netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=<port> con
   back into its own listener and every request hangs.
 - The WSL IP changes across WSL restarts, so the rule must be refreshed:
   keep one elevated logon scheduled task running a script that re-`set`s
-  every proxied port to the current `wsl.exe hostname -I` (check memory /
-  Task Scheduler for an existing one before creating a second). On-demand:
+  every proxied port to the current `wsl.exe hostname -I`. On-demand:
   `schtasks.exe /run /tn <task>`.
 - App-level: derive self-links from the request `Host` header, not a
   configured base URL, so localhost and LAN clients both get working links.

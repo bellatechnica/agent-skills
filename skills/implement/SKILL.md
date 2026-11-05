@@ -20,12 +20,11 @@ briefing than on building.
   be a file in the main checkout (committed or not), in committed
   history, or a design `plan-upfront` published to a document tool,
   cited by its link; a file inside a worktree is off limits to other
-  sessions. A
-  plan that lives only in this conversation is written to the main
-  checkout's `docs/do_not_commit/plans/`, as `plan-upfront` names it; a plan file
-  inside a worktree is moved, not copied, to the same relative path in
-  the main checkout, so only one version exists. Every brief cites that
-  one path.
+  sessions. A plan that lives only in this conversation is written
+  where `plan-upfront` §0 puts a plan file; a plan file inside a
+  worktree is moved, not copied, to the same relative path in the main
+  checkout, so only one version exists. Every brief cites that one
+  path.
 - **Authorization to build.** `plan-upfront` stops once the plan file
   is written; the user's request to build is the authorization.
 - **The plan still holds.** Re-read it against the current code. If
@@ -102,11 +101,8 @@ Rules that hold in every mode:
 
 - **Every build happens in a worktree of its own**, created before
   the first edit by whoever builds — or, for a subagent, by this
-  session for that subagent alone; `new-session` §2 has the rules,
-  including which commit to base it on. Never build in the repo root,
-  in a worktree someone else is building in, or in another live
-  session's worktree. Other sessions may land on the branch this
-  session sits on at any moment, and a commit made there races them.
+  session for that subagent alone — as `new-session` §2 describes,
+  including which commit to base it on.
 - **A subagent's worktree passes to the owner when the subagent
   returns.** From then on it is not another session's worktree: the
   owner verifies it (§4) and makes review fixes there, as
@@ -115,8 +111,7 @@ Rules that hold in every mode:
   deployed service, a published release — until `review-loop` has met
   its level on the code that does the writing.
 - **The plan's verification list travels with the work.** Whoever
-  implements gets the plan path and its verification section, and
-  states expected numbers before running checks.
+  implements gets the plan path and its verification section.
 - **The agent instructions bind everyone.** Implementers and
   reviewers alike follow the repository's agent instructions (its
   AGENTS.md, CLAUDE.md or equivalent) and the user's global ones.
@@ -158,10 +153,8 @@ Per mode:
   - The new session owns everything else: running `review-loop` on its
     own change, landing it, and its recap to the user. It lands only as
     `implement` §5's "Landing" describes, on this session's word —
-    never on a clean review alone; a merge also waits until this
-    session reports that the decisions list holds no major decisions
-    without an alternative, or relays the user's approval of them. Once its branch lands, it cleans up as
-    `new-session` §6 describes.
+    never on a clean review alone. Once its branch lands, it cleans up
+    as `new-session` §6 describes.
 
   After launch, while the new session owes this session a ready
   branch, its final branch, or the recap copy, this session watches it
@@ -200,37 +193,34 @@ of this line:
   clear answer needs no report.
 
 Escalations are batched, the way `plan-upfront` batches its
-questions:
+questions. The goal is as few rounds as possible without stalling the
+build: ask once any stream has built everything that does not depend
+on an open escalation, without holding the round for its review, or
+once its review has met its level apart from the open escalations.
+Ask earlier only when waiting would waste the work: most of what
+remains depends on the answer, or the plan's premise has turned out
+false in a way that leaves more than one way forward.
 
 - Do not stop at the first one. Record it, leave the work that
   depends on it unbuilt — never settle the question by building one
   side — and carry on with everything that does not depend on it.
-- Ask when any one stream has no independent work left, or its
-  review has met its level apart from the open escalations: send
-  every escalation open at that moment, across all streams, in one
-  round. Give each its options, the recommended one first, and what it
-  changes in the plan — for a design amendment, the resulting text of
-  the recommended option, and of any other option whose text the user
-  could not infer from its one-line description, so the answer
-  approves the amendment too.
-  Aim for one round per plan. A later round only for questions that
-  arose after the previous round went out, or that its answers
-  created; never hold a question back to avoid one.
-- Ask an escalation at once, unbatched, only when waiting would
-  waste the work: most of the remaining work depends on its answer,
-  or the plan's premise has turned out false in a way that leaves
-  more than one way forward.
+- When a round goes out, it carries every escalation open at that
+  moment, across all streams. Never hold a question back to avoid a
+  round.
+- Give each escalation its options, the recommended one first, and
+  what it changes in the plan — for a design amendment, the resulting
+  text of the recommended option, and of any other option whose text
+  the user could not infer from its one-line description, so the
+  answer approves the amendment too.
 
 ## 4. Verify, then review
 
 Before `review-loop`, the owner of the change checks what was built,
 not what was reported:
 
-- `git status` and `git log` in the implementing worktree: the tree is
-  clean, the commits exist, and the branch is the one the implementer
-  reported (in this-session mode, the one this session created),
-  starting from the base the brief named (in this-session mode, the
-  base this session chose).
+- The branch, its base and its commits are the ones the brief named
+  and the implementer reported (in this-session mode, the ones this
+  session chose), and the implementing worktree is clean.
 - The diff covers every plan item assigned to this branch (the whole
   plan, unless a stream or piece brief narrowed it) and nothing outside
   that assignment; an item left unbuilt for an open escalation is
@@ -322,15 +312,12 @@ shows merged after a squash or rebase merge), and unless
 the user has said work continues on it:
 
 - **Built by this session or a subagent**: this session cleans up as
-  `new-session` §6 describes: it removes the worktree, deletes the branch,
-  and drops the scratch databases and fixtures the build created.
+  `new-session` §6 describes.
 - **Built by a separate session**: that session cleans up its own
   worktree and branch, as `new-session` §6 describes. This session then
   closes the window it spawned, once the branch has landed, its
   worktree and branch are both gone, and the copy of its recap has
-  arrived here — checked against the trunk, `git worktree list` and
-  `git branch --list <branch>`, not against the session's own
-  summary.
+  arrived here.
 - **Under a coordinator**: each implementing session cleans up as
   `new-session` §6 describes; the coordinator verifies that cleanup and
   closes windows as its own skill says.

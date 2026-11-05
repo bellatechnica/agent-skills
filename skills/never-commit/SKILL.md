@@ -5,12 +5,9 @@ description: The classes of content that must never enter a git repository's his
 
 # What must never enter a repository's history
 
-One list, two uses. **Before a change lands** it is a gate for whoever
-lands it: the author checks their own diff before committing to the
-trunk, and a separate reviewer who merges branches checks again. Fix a
-hit by amending or rebasing. Deleting it in a later commit leaves it in
-the object store and in every clone. **After it lands**, the sweep is
-`history-audit`.
+Before a change lands, fix a hit by amending or rebasing: deleting it
+in a later commit leaves it in the object store and in every clone.
+After it lands, the sweep is `history-audit`.
 
 Every class below carries the signal to look for AND the false positive
 that most often wastes the search. Read the hit before flagging it —
@@ -35,13 +32,12 @@ sample, expired, revoked or test.
 Real names, personal email addresses, phone numbers — where a role
 address or a project identity belongs.
 
-- **Signal**: personal email domains in tracked files; any identifier
+- **Signal**: personal email domains (gmail, yahoo, outlook, qq, 163
+  and the like) in tracked files; any identifier
   the project has named as sensitive; and **every commit's author and
   committer email across all refs** —
   `git log --all --format='%ae%n%ce' | sort -u` — because a personal address
   sits in git metadata with no tracked line ever mentioning it.
-- **Never choose a contact identity on the user's behalf.** Where an
-  outbound identity is genuinely needed, it is theirs to pick.
 
 ## Internal network and machine shape
 
@@ -102,12 +98,6 @@ because the author can open it.
   file at all ("measured and written up separately as a proposal"). Only
   a human reading the sentence and asking *where would I go to read
   that* finds it.
-- **Rule — the remedy depends on what the pointer carried.** For
-  EVIDENCE, delete the pointer and state in the committed text what the
-  source was, what it covered and when it was taken. Do NOT copy the
-  evidence itself in. For a deferred DECISION, say it inline or promote
-  the document that says it. Deleting is right for evidence, never for a
-  decision.
 - **False positive**: naming a directory rather than a file
   (`docs/do_not_commit/`) is a statement about where a class of material
   lives, not a citation, and stays true in every clone.

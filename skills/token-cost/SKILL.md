@@ -5,7 +5,7 @@ description: Calculate API-equivalent token costs and, for Codex, usage credits 
 
 # Token Cost
 
-Produce a reproducible API-equivalent estimate and, where the provider publishes them, usage credits. Do not present either as an invoice or an additional charge.
+Produce a reproducible API-equivalent estimate and, where the provider publishes them, usage credits.
 
 ## Workflow
 
@@ -50,7 +50,7 @@ When the fields apply, lead with a Unicode table in this shape:
 └──────────────┴───────┴───────┴─────────────┴────────────┴────────┴───────┴───────────────┘
 ```
 
-Here `input` means uncached input. Include a `total` row. Omit a category only when the source cannot represent it; show an em dash for a represented zero or an unpriced value. For Codex, show Standard and Fast as separate rows and put `API $` and `usage credits` beside each other. Usage credits are provider units, not dollars.
+Here `input` means uncached input. Include a `total` row. Omit a category only when the source cannot represent it; show an em dash for a represented zero or an unpriced value. For Codex, show Standard and Fast as separate rows and put `API $` and `usage credits` beside each other.
 
 Follow with a cost table when at least two priced components are nonzero:
 
