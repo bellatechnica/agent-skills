@@ -11,7 +11,7 @@ and then runs the same loop for every reviewer (§3).
 
 The owner of the change runs this loop: the session that implemented
 it; when a subagent built it, the session that dispatched the
-subagent; or the separate session that built it, whether it took the work over through `handoff` or a leading session (`implement`, `coordinator`) still leads it. The
+subagent; or the separate session that built it, whether it took the work over through `handoff` or is still led by `implement` or `coordinator`. The
 owner makes the fixes, in the change's own worktree. The reviewer is
 read-only and never fixes anything.
 
@@ -20,7 +20,9 @@ read-only and never fixes anything.
 - Commit the work first. A review of a moving working tree reviews
   nothing in particular.
 - Resolve the change to full commit IDs: the base (the merge base with
-  the branch it will land on, not its own upstream) and the tip. Each
+  the branch it will land on, not its own upstream) and the tip.
+  Identify that branch from the user, pull request metadata, or the
+  repository's established workflow, and ask when it is unclear. Each
   branch gets its own loop; several branches built in parallel are
   several loops.
 - Gather what the reviewer is measured against: the plan and the
@@ -55,8 +57,9 @@ There are three levels:
   preferences may be declined with a one-line reason each.
 - **Fully clean** — iterate until the latest round, on the whole
   change, reports no findings at all. A finding the owner would
-  decline goes back to the reviewer with evidence until the reviewer
-  withdraws it or the user rules on it.
+  decline or defer stands until the reviewer, ruling on the owner's
+  evidence as it rules on a dispute, withdraws it, or the user rules
+  on it.
 
 Pick the level from how costly a defect that survives this review
 would be. Judge it from the change's own circumstances, not from what
@@ -95,7 +98,7 @@ author for this purpose, since it planned and directed the build.
 | Reviewer | Fits when | Watch for |
 | --- | --- | --- |
 | **Review subagent** — `/code-review` in Claude Code (local levels only; never `--fix` or `--comment`), or the harness's own equivalent | The default: fresh eyes, cheap, no setup. Raise the effort level with the stop level. | It starts from nothing each round, so it does not know the plan or why things were decided. `/code-review` hunts bugs in a diff; where the defects that matter are elsewhere — conformance to a plan, ambiguous instructions in prose, contradictions between documents — brief a general-purpose subagent instead, or as well, with the plan path, the pinned IDs, what to look for, and the read-only rule. |
-| **Persistent reviewer** (`review-session` skill) | Many rounds are expected; the change is large enough that rebuilding context every round is the main cost; the subagent's findings keep failing for lack of context (re-raising settled decisions, misreading the design); a reviewer from another model family is wanted, since it catches different defects; or the user wants to watch the reviewer. | Setup cost, and a session to close afterwards. `review-session` runs the rounds and the close-out; pass it the stop level from §1, and put the plan and design paths (or published links) and any prose, plan-conformance, or cross-document concerns into its review criteria — its reviewer reads only committed design documents on its own, and a design kept in the do_not_commit area or published elsewhere is not one. Its reviewer chooses its own review method to suit the change. |
+| **Persistent reviewer** (`review-session` skill) | Many rounds are expected; the change is large enough that rebuilding context every round is the main cost; the subagent's findings keep failing for lack of context (re-raising settled decisions, misreading the design); a reviewer from another model family is wanted, since it catches different defects; or the user wants to watch the reviewer. | Setup cost, and a session to close afterwards. `review-session` runs the rounds and the close-out; pass it the stop level from §1, and put the plan and design paths (or published links) and any prose, plan-conformance, or cross-document concerns into its review criteria — its reviewer reads only committed design documents on its own, and a design kept in the do_not_commit area or published elsewhere is not one. |
 | **Something else** | Security-sensitive code: add `/security-review` in Claude Code. A workstream under a coordinator: its phase review comes on top of this loop. Product or UX judgement no tool can make: ask the user to review that part. A deep multi-agent cloud review (`/code-review ultra`) is user-triggered and billed — suggest it, never launch it. | These add to an independent reviewer; none replaces one. One exception: at the one-pass level, when a handed-off or separate session wrote the code, the design session's plan check may be the single pass. |
 
 Switch from a subagent to a persistent reviewer when its findings keep
@@ -116,66 +119,38 @@ Each round:
    gets exactly one disposition:
    - **Fix** — a real defect. Fix it and commit.
    - **Dispute** — wrong, with evidence (code path, test, design
-     section). The reviewer rules on the evidence: a persistent
-     reviewer directly, a subagent in the next round's brief.
+     section), including a finding about a case that cannot occur by
+     construction or that the plan ruled out. The reviewer rules on
+     the evidence: a persistent reviewer directly, a subagent in the
+     next round's brief.
    - **Decline** — real but not worth fixing here: a nit, a
      preference, out of scope. One-line reason.
    - **Defer** — real and worth doing, but not in this change. Record
      where it is tracked and tell the user.
-   - **Escalate** — a major decision with a real alternative, as
-     `implement` §3's "Decide or escalate" defines it; a major
-     decision with one clear answer, or a minor tradeoff, is decided
-     and reported instead. Do not decide it by implementing one side: leave the work
-     that depends on it alone and carry on with the rest. Send it as it
-     arises to the leading session when `implement` or `coordinator`
-     assigned the work, which answers what the plan settles and batches
-     the rest for the user. Otherwise — no such assignment — hold it
-     for the batched round to the user that `implement` §3 describes.
-     Answers that
-     call for changes make a new tip, reviewed like any fix.
+   - **Escalate** — a major decision with a real alternative,
+     decided, batched and built around as `implement` §3's "Decide or
+     escalate" describes. It goes, as it arises, to the leading
+     session when `implement` or `coordinator` assigned the work, and
+     otherwise into that section's batched round to the user. Answers
+     that call for changes make a new tip, reviewed like any fix.
 
-   At the fully-clean level, a decline or a deferral needs the
-   reviewer's agreement (given the same way as a dispute ruling) or
-   the user's.
-
-   **A fix that adds complexity gets a second look before it is
-   made.** A correct finding does not oblige the fix the reviewer
-   proposed, or any fix that grows the change. Before making one, ask:
-   - Is it overengineering — a new option, mode, abstraction or
-     setting nobody asked for, or handling for a case the plan ruled
-     out or that cannot occur by construction?
-   - Is the fix larger than the defect, or in the wrong layer —
-     patched at each call site when one change upstream removes the
-     whole class?
-   - Would removing or narrowing code fix it more simply — dropping
-     the feature that carries the defect rather than defending it?
-   - Is there a major tradeoff behind it — correctness here bought
-     with simplicity, performance, reversibility, or behaviour the
-     plan relied on — with another option the user might prefer? Does
-     it change what the plan says? If so and there is one clear
-     answer, fix it and report it.
-
-   Prefer the smallest fix that closes the defect: decline a proposed
-   fix that is overengineering, and close the defect some smaller way.
-   A finding about a case that cannot occur, or that the plan ruled
-   out, is a Dispute, with the construction or the plan section as
-   evidence. A fix that is a major decision with a real alternative is an
-   Escalate, not a Fix. Each round adding another special case is the
-   round-shape warning below. Note every finding
-   answered by adding complexity or by refusing it, for the report.
+   **A fix grows the change only as far as the defect requires.** A
+   correct finding does not oblige the reviewer's proposed fix. Prefer
+   the smallest fix that closes the defect, in the layer where one
+   change removes the whole class, including removing or narrowing
+   the code that carries it. A fix that is itself a major decision
+   with a real alternative is an Escalate. Note every finding answered
+   by adding complexity or by refusing it, for the report.
 3. **Re-pin** the new tip and check §1's level. A result about an older
-   tip, or reviewed under different criteria, is stale: re-run it. The
-   one exception is the one-pass level, where the owner's own check of
-   a trivial fix lets the round's result stand for the new tip.
+   tip, or reviewed under different criteria, is stale: re-run it,
+   except after a trivial fix at the one-pass level (§1).
 
-The level is met only once every escalation is answered and the
-work it called for has been reviewed, and only by the independent
-reviewer's latest round,
-except where §2's one-pass exception makes the design session the
-single pass. A fix prompted by the design session's final sign-off
-makes a new tip: handle it as step 3 handles any new tip. Report only
-after the sign-off passes. When the design session's plan check was the
-single pass, that check is also the sign-off.
+The level is met only by the independent reviewer's latest round,
+or, under §2's one-pass exception, by the design session's plan check,
+which then also counts as the sign-off. Either way, every escalation
+must be answered and the work it called for reviewed. A fix prompted
+by the design session's sign-off makes a new tip, handled as step 3
+handles any new tip. Report only after the sign-off passes.
 
 Impose no fixed round count, but watch the shape of the rounds. Real
 findings shrinking in severity round by round are a loop converging.

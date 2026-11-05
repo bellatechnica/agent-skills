@@ -245,10 +245,9 @@ raised by the caller's own direct paste.
 
 ### `UNKNOWN`
 
-For `UNKNOWN layout`, read-only direct inspection may distinguish a transient
-client screen from a newly unsupported shape and may share the content needed
-to explain that finding.
-Inspection does not by itself relabel the sender's result.
+For `UNKNOWN layout`, direct inspection (when allowed) can tell a transient
+client screen from a newly unsupported shape, but does not by itself relabel
+the sender's result.
 
 - `UNKNOWN server`: correct the tmux socket or server selection before another
   attempt. Do not back off blindly.

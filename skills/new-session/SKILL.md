@@ -30,23 +30,17 @@ and reports to the user needs no channel.
 
 When communication is anticipated:
 
-- Select the channel with `session-message` before launch — Relay
-  preflight, the announced direct fallback, registration, listeners,
-  conditional wake notices, and response delivery — and keep that
-  channel for this session's whole life.
-- **The launch prompt tells the new session to load the
-  `session-message` skill before anything else and follow it for its
-  side of the channel.** Without it the session has addresses but not
-  the protocol: it does not register, keep a listener, or apply the
-  wake rule, and messages to it sit unread.
-- Give both sessions the channel instructions and addresses
-  `session-message` specifies, including the selected client's listener
-  rule from `agent-relay-message` when Relay is selected. Resolve this
-  session's pane with `tmux display-message -p -t "$TMUX_PANE"
-  '#S:#I.#P'` and the new session's by stable window name. After
-  launch, keep this session's listener; the initial launch report is a
-  commentary update when the current client must keep its turn active
-  for that listener.
+- Set up the channel with `session-message` before launch, and keep
+  that channel for this session's whole life.
+- Write the launch prompt's channel part as `session-message`'s "Tell
+  a new session how to respond" says. **The launch prompt tells the new
+  session to load the `session-message` skill before anything else and
+  follow it for its side of the channel**: without that, the session
+  has addresses but no protocol, and messages to it sit unread.
+- Resolve this session's pane with `tmux display-message -p -t
+  "$TMUX_PANE" '#S:#I.#P'` and the new session's by stable window name.
+  When the current client must keep its turn active for its listener,
+  give the launch report (§4) as a commentary update.
 
 ## 2. Decide where the new session works
 
@@ -76,11 +70,10 @@ happens to be called `main`):
 So: work that will EDIT FILES creates its own worktree **from the
 start**; read-only work starts at the repo root and creates a
 worktree **at the moment it turns into edits, before the first
-edit** — never editing where it was reading. One worktree per session:
-never point the new session at a worktree another session is using,
-and check what is already there (`git worktree list`) before naming
-one. **This session's own worktree is not a target either.** If this
-session is working in one, never phrase the prompt in a way that points
+edit** — never editing where it was reading. Check what is already
+there (`git worktree list`) before naming a new worktree. **This
+session's own worktree is not a target either.** If this session is
+working in one, never phrase the prompt in a way that points
 there — pass the BRANCH to base a new worktree on, plus the absolute
 path of the repo root for reading.
 
@@ -240,11 +233,9 @@ merely "the merger accepted"):
   something did not land: investigate, never reach for `-D` — except
   after a squash or rebase merge, which `-d` cannot see: confirm the
   merged PR's head is this branch's tip, then use `-D`.
-- **Drop the scratch databases and fixtures the branch created.** Test
-  databases are often per-checkout and per-day, so one worktree can
-  leave several; list them by the naming scheme before dropping, and
-  drop only those belonging to this checkout — never a name you cannot
-  positively attribute.
+- **Drop the scratch databases and fixtures the branch created** —
+  every one, since one checkout can leave several, and none you cannot
+  positively attribute to this checkout.
 
 Report the cleanup in the recap: what was removed, and anything
 deliberately kept.
@@ -284,8 +275,7 @@ needs no watch.
   or as commits on the session's branch:
   sessions repeatedly finish the artifact, idle, and never send the
   message. The fix is to read the file and proceed, not to ask for it
-  again. Judge by the artifact, not by the session's own summary: a
-  pane that reads idle can hold an approved branch it never submitted.
+  again.
 - **Escalation ladder per deliverable: wake once; on a second stall
   of the SAME deliverable, tell the user instead of waking a third
   time.** A session that stalls twice on one item will stall a third.

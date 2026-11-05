@@ -5,11 +5,6 @@ description: Hand a work item and its context to a new parallel agent session - 
 
 # Hand off work to a parallel session
 
-Prefer a session (not a subagent) when the user will steer the work
-directly, it spans hours or many commits, or it must survive this
-session. Subagents live inside the spawning session and report back to
-it, not to the user.
-
 A handoff transfers a work item and its context to a new session.
 Who owns the work afterwards is §4's setting: the new session by
 default, or the sender when a calling workflow keeps leading.
@@ -20,16 +15,13 @@ the new session is given and how it involves the user.
 
 ## 0. Prompt or handoff doc?
 
-Default to the cheap side. A handoff doc exists to give the
-new session something durable to anchor on: multi-step implementation
-breakdowns, design notes and decisions it must respect, spec
-pointers, consumer/call-site inventories, traps, commit order,
-coordination conditions. Write one when the handoff carries more
-than fits comfortably in a prompt, or when the content must outlive
-the first message (the session re-reads it; other sessions can see
-it). **Simple, self-contained tasks need no doc** — put the whole
-task in the launch prompt and skip section 1. A one-paragraph handoff
-doc is a sign the prompt would have been enough.
+Write a handoff doc only when the handoff carries more than fits
+comfortably in a prompt, or the content must outlive the first message
+(the session re-reads it; other sessions can see it). Such content
+includes multi-step implementation breakdowns, design notes and
+decisions it must respect, spec pointers, consumer and call-site
+inventories, traps, commit order, and coordination conditions.
+Otherwise put the whole task in the launch prompt and skip section 1.
 
 Whether the session works at the repo root or in its own worktree, and
 on which base commit, is `new-session` §2.
@@ -46,16 +38,13 @@ The doc is best-effort context, not a self-sufficient brief: carry what
 the receiver could not reconstruct or think to ask about, and leave the
 rest to the reply channel (section 2).
 
-- **Spec pointers, not spec**: the design and plan documents are the
-  spec — committed files, files in the main checkout's
-  `docs/do_not_commit/`, or a published document cited by its link; list exactly which
-  files/sections. The handoff doc holds the breakdown.
-- **Name the design documents the work touches — required, every
-  handoff.** List the relevant ones — under the repo's designs area, in
-  the main checkout's `docs/do_not_commit/`, or published and cited by
-  link — or state that none apply, and name them as candidates to rule
-  in or out, not assertions ("plausibly relevant, not checked" is
-  honest and useful).
+- **Spec pointers, not spec — required, every handoff.** The design
+  and plan documents are the spec. List exactly which files and
+  sections apply (committed, in the main checkout's
+  `docs/do_not_commit/`, or published and cited by link), or state
+  that none apply. Name them as candidates to rule in or out, not as
+  assertions ("plausibly relevant, not checked" is honest and useful).
+  The handoff doc holds the breakdown.
 - **Binding vs advisory, as two lists**: which requirements are defects
   if violated, and which are suggestions to override freely on finding
   something better. Undifferentiated, a receiver complies slavishly
@@ -101,8 +90,8 @@ The prompt also carries:
   Unconstrained handoffs omit this.
 - When the handoff names known traps, doc or prompt: a named trap may
   still fire. Tell the session that if one does, it reports it to the
-  sender before anything else and saves what the trap changed in its
-  work as a patch, so the change can be inspected and undone.
+  sender before anything else and preserves what the trap changed in
+  its work, so the change can be inspected and undone.
 - Tell the session how to involve the user. It starts directly and
   judges for itself when the work is worth stopping, and which skills
   to use. When the sender wants a plan reviewed by the user before
@@ -116,10 +105,6 @@ The prompt also carries:
   to the user — what changed, key decisions, how it was verified,
   anything pending. The user does not read the handoff doc; the recap
   is their record.
-- Say in the prompt that ownership runs past the merge: once the branch
-  lands, the session cleans up its own worktree, branch and scratch
-  databases (`new-session` §6) unless the user has noted further work
-  on it.
 - Coordination is two-way in either mode: the spawned session reports when it
   reaches a blocked step or is ready, and the spawning session sends the signal
   as soon as the blocking condition clears. Also update any durable signal
@@ -127,9 +112,7 @@ The prompt also carries:
 
 ## 3. Report the launch
 
-Report the launch as `new-session` §4 says. If a coordination signal
-exists, update it (status file or message) as soon as the blocking work
-in this session finishes, so the waiting session can proceed.
+Report the launch as `new-session` §4 says.
 
 ## 4. Ownership
 
@@ -154,15 +137,3 @@ doc's Coordination section (GPU, live DB, services), or a direct conflict
 between sessions. When a spawned session reports READY, relay that to
 the user and stop — what happens next is between the user and that
 session.
-
-## 5. Reviving a closed session
-
-Resume the original session as `new-session` §5 describes — never
-spawn a fresh one to re-learn the work.
-
-## 6. Receiving a routed question
-
-**Rule a routed question OUT of your area before answering it inside
-it**: check, with evidence, whether the question is yours at all — a
-"question about your subsystem" can turn out to be a defect elsewhere,
-such as in a test.
