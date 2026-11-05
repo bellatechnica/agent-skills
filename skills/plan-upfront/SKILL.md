@@ -77,8 +77,9 @@ save review depth for the design-specific residue.
 ## 3. Clarifying questions — few rounds, shaped by the task
 
 **Default: ONE round, up front.** Collect every question whose answer
-would change the plan and ask them all together via AskUserQuestion
-(consecutive calls in the same round if more than 4). Give each
+would change the plan and ask them all together (Claude Code's
+AskUserQuestion where available, in consecutive calls in the same round
+if more than 4). Give each
 question a recommended default, listed first and marked
 "(Recommended)". Decisions too minor for a question go in the plan's
 **Assumptions** section, where the user can veto them.

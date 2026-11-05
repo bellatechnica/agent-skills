@@ -5,7 +5,7 @@ description: Run an independent review in a persistent agent session, optionally
 
 # Review session
 
-This skill coordinates the review loop. The spawned session performs each review, choosing its own method. The invoking session owns the loop and normally owns the change; if another session owns the change, record its exact Relay slug and route findings to it. The reviewer is read-only. This differs from a `handoff`, which briefs a session to take on a work item.
+This skill coordinates the review loop. The spawned session performs each review, choosing its own method. The invoking session owns the loop and normally owns the change; if another session owns the change, findings route to it at the address step 2 of "Prepare the review" obtains for the selected channel. The reviewer is read-only. This differs from a `handoff`, which briefs a session to take on a work item.
 
 The loop runs to a stop level: one pass, no real defects, or fully clean. When `review-loop` invokes this skill, use the level it passes. Otherwise judge the level the way `review-loop` describes, from how costly a defect that survives the review would be, state it with its reason, and proceed; the user overrides. Below, **clean** means the latest round met that level.
 

@@ -98,10 +98,9 @@ author for this purpose, since it planned and directed the build.
 | **Persistent reviewer** (`review-session` skill) | Many rounds are expected; the change is large enough that rebuilding context every round is the main cost; the subagent's findings keep failing for lack of context (re-raising settled decisions, misreading the design); a reviewer from another model family is wanted, since it catches different defects; or the user wants to watch the reviewer. | Setup cost, and a session to close afterwards. `review-session` runs the rounds and the close-out; pass it the stop level from §1, and put the plan and design paths (or published links) and any prose, plan-conformance, or cross-document concerns into its review criteria — its reviewer reads only committed design documents on its own, and a design kept in the do_not_commit area or published elsewhere is not one. Its reviewer chooses its own review method to suit the change. |
 | **Something else** | Security-sensitive code: add `/security-review` in Claude Code. A workstream under a coordinator: its phase review comes on top of this loop. Product or UX judgement no tool can make: ask the user to review that part. A deep multi-agent cloud review (`/code-review ultra`) is user-triggered and billed — suggest it, never launch it. | These add to an independent reviewer; none replaces one. One exception: at the one-pass level, when a handed-off or separate session wrote the code, the design session's plan check may be the single pass. |
 
-Switch reviewers when the rounds say to: after two rounds where most
-findings were refuted by context the reviewer lacked, and briefing it
-with the settled decisions did not stop it, move from a subagent to a
-persistent reviewer. Say when and why you switched.
+Switch from a subagent to a persistent reviewer when its findings keep
+failing for context it lacked, even after it was briefed with the
+settled decisions. Say when and why you switched.
 
 ## 3. Run rounds
 
@@ -113,10 +112,9 @@ Each round:
    finding with its disposition and evidence, so settled points stay
    settled. A subagent remembers nothing between rounds; this brief is
    its only memory.
-2. **Triage every finding**, re-deriving its load-bearing claim from
-   the code before acting — a finding is a report, not a fact. Each
+2. **Triage every finding** — a finding is a report, not a fact. Each
    gets exactly one disposition:
-   - **Fix** — a real defect. Fix it, run the targeted tests, commit.
+   - **Fix** — a real defect. Fix it and commit.
    - **Dispute** — wrong, with evidence (code path, test, design
      section). The reviewer rules on the evidence: a persistent
      reviewer directly, a subagent in the next round's brief.

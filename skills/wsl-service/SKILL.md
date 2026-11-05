@@ -84,16 +84,18 @@ inbound rule for the port (elevated, see §4):
 netsh advfirewall firewall add rule name=<Name><port> dir=in action=allow protocol=TCP localport=<port>
 ```
 
-### Mirrored networking (`networkingMode=mirrored`, Win11 22H2+)
+### Mirrored networking (`networkingMode=mirrored`, Windows 11 22H2 or later)
 
-WSL shares the host's interfaces: a `0.0.0.0` bind is LAN-reachable with
-no proxy. Additionally allow the port in the Hyper-V firewall (one rule
-can carry several ports; extend an existing one with
-`Set-NetFirewallHyperVRule` before creating a new one):
+A Windows 11 22H2 machine can accept the setting and silently stay on NAT, so
+confirm the mode from step 0's `eth0` address after a WSL restart, never from
+`.wslconfig`. Once mirrored, WSL shares the host's interfaces: a `0.0.0.0`
+bind is LAN-reachable with no proxy. Additionally allow the port in the
+Hyper-V firewall (one rule can carry several ports; extend an existing one
+with `Set-NetFirewallHyperVRule` before creating a new one):
 
 ```powershell
-New-NetFirewallHyperVRule -Name <Name> -DisplayName "..." -Direction Inbound
-    -VMCreatorId '{40E0AC32-B90B-4029-90E9-0AEB6D5069D4}' -Protocol TCP
+New-NetFirewallHyperVRule -Name <Name> -DisplayName "..." -Direction Inbound `
+    -VMCreatorId '{40E0AC32-B90B-4029-90E9-0AEB6D5069D4}' -Protocol TCP `
     -LocalPorts <ports> -Action Allow
 ```
 
@@ -124,14 +126,18 @@ netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=<port> con
 
 ### Migrating NAT → mirrored
 
-Delete all portproxy rules (`netsh interface portproxy reset`) and disable
-the refresh task first — leftover Windows-side listeners occupy the very
+Record the existing rules (`netsh interface portproxy show v4tov4`) in
+project memory, then delete them all (`netsh interface portproxy reset`)
+and disable the refresh task first — leftover Windows-side listeners occupy the very
 ports WSL then serves directly. Keep the Windows Firewall rules, add the
 Hyper-V firewall rule, set `[wsl2] networkingMode=mirrored` in
 `%USERPROFILE%\.wslconfig`, then `wsl --shutdown` — which kills the
 session you are running in: hand that step to the user, and verify
-afterwards in a fresh session. Update memory to the new mode so the proxy
-machinery is never resurrected.
+afterwards in a fresh session that `eth0` now holds a LAN-subnet address.
+If it still holds a NAT address, mirrored mode did not engage: remove
+`networkingMode=mirrored` from `.wslconfig`, re-add the recorded portproxy
+rules, and re-enable the refresh task. Once it is mirrored, update memory to
+the new mode so the proxy machinery is never resurrected.
 
 ## 4. Elevated Windows commands
 

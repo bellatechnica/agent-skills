@@ -280,6 +280,8 @@ def read_usage(root: Path, start: datetime, end: datetime):
                     "max_input_side": chosen.input_side,
                     "max_output": chosen.output,
                     "disagrees": False,
+                    "tier": None,
+                    "tier_seen": False,
                 }
             elif chosen != response["usage"]:
                 if lines_disagree(response["usage"], chosen):
@@ -287,6 +289,14 @@ def read_usage(root: Path, start: datetime, end: datetime):
                 response["usage"] = max(response["usage"], chosen)
             response["max_input_side"] = max(response["max_input_side"], chosen.input_side)
             response["max_output"] = max(response["max_output"], chosen.output)
+            # The --rate values are standard-tier rates. Any line marking another
+            # tier marks the whole response, so it is never priced at standard
+            # rates; the first such tier seen names the row.
+            tier = usage.get("service_tier")
+            if tier not in (None, ""):
+                response["tier_seen"] = True
+                if tier != "standard" and response["tier"] is None:
+                    response["tier"] = str(tier)
             ts_raw = record.get("timestamp")
             timestamp = parse_timestamp(ts_raw, None) if ts_raw else None
             if timestamp is not None:
@@ -327,6 +337,10 @@ def read_usage(root: Path, start: datetime, end: datetime):
             write_5m = flat_write
             write_1h = 0
             diagnostics["ttl_unspecified_assumed_5m"] += 1
+        if response["tier"] is not None:
+            diagnostics[f"unpriced_service_tier_{response['tier']}"] += 1
+        elif not response["tier_seen"]:
+            diagnostics["service_tier_unspecified_assumed_standard"] += 1
 
         events.append(
             {
@@ -339,6 +353,7 @@ def read_usage(root: Path, start: datetime, end: datetime):
                 "cache_write_1h": write_1h,
                 "cache_read_tokens": cache_read,
                 "output_tokens": output_tokens,
+                "tier": response["tier"],
             }
         )
     return events, dict(diagnostics)
@@ -362,12 +377,20 @@ def calculate(events, rates, proxies, long_context):
     for event in events:
         observed = event["model"]
         pricing_model = proxies.get(observed, observed)
-        row = rows[pricing_model]
+        # A response on any tier but standard gets its own row and stays
+        # unpriced: the --rate values are standard-tier rates.
+        tier = event.get("tier")
+        label = f"{pricing_model} / {tier}" if tier is not None else pricing_model
+        row = rows[label]
+        row["pricing_model"] = pricing_model
         row["turn_ids"].add(event["turn_id"])
         row["observed_models"].add(observed)
         for key in ("input_tokens", "cache_write_5m", "cache_write_1h", "cache_read_tokens", "output_tokens"):
             row[key] += event[key]
 
+        if tier is not None:
+            unpriced.add(label)
+            continue
         rate = rates.get(pricing_model)
         if rate is None:
             unpriced.add(observed)
@@ -394,8 +417,8 @@ def calculate(events, rates, proxies, long_context):
         row["cost"]["output"] += event["output_tokens"] * rate.output * output_multiplier / 1_000_000
 
     normalized = {}
-    for model, row in rows.items():
-        normalized[model] = {
+    for label, row in rows.items():
+        normalized[label] = {
             "turns": len(row.pop("turn_ids")),
             "observed_models": sorted(row.pop("observed_models")),
             "input": row["input_tokens"],
@@ -406,7 +429,7 @@ def calculate(events, rates, proxies, long_context):
             "output": row["output_tokens"],
             "cost_components": dict(row["cost"]),
             "api_cost": sum(row["cost"].values()) if row["cost"] else None,
-            "pricing_model": model,
+            "pricing_model": row["pricing_model"],
         }
     return normalized, dict(long_requests), sorted(unpriced)
 
@@ -624,7 +647,19 @@ def main() -> int:
     events, diagnostics = read_usage(args.logs_root, start, end)
     result, long_requests, unpriced = calculate(events, rates, proxies, long_context)
     if args.strict_pricing and unpriced:
-        raise SystemExit("missing rates for: " + ", ".join(unpriced))
+        # A non-standard tier's row has no rate option to supply, so name it
+        # apart from the models a --rate would fix.
+        tiers = sorted({event["tier"] for event in events if event.get("tier") is not None})
+        tier_rows = [label for label in unpriced if any(label.endswith(f" / {t}") for t in tiers)]
+        missing = [label for label in unpriced if label not in tier_rows]
+        problems = []
+        if missing:
+            problems.append("missing rates for: " + ", ".join(missing))
+        if tier_rows:
+            problems.append(
+                "non-standard service tiers cannot be priced (no rate option): " + ", ".join(tier_rows)
+            )
+        raise SystemExit("; ".join(problems))
     first = min((event["timestamp"] for event in events), default=None)
     last = max((event["timestamp"] for event in events), default=None)
     display_zone = ZoneInfo(args.timezone) if args.timezone else timezone.utc

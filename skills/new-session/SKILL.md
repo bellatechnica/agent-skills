@@ -276,7 +276,7 @@ needs no watch.
   user — a draft PR awaiting their merge, a branch reported ready to
   them, decisions awaiting their approval — is not in flight: the user's message, or a watcher on the
   landing, is the wake. With NOTHING in flight, STOP the tick; a poll
-  that only re-reads unchanged state is noise in the operator's
+  that only re-reads unchanged state is noise in the user's
   terminal.
 - On a stall, before waking the session, check whether the
   deliverable already EXISTS unrelayed — in the main checkout's

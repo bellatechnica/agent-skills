@@ -22,6 +22,7 @@ The script implements the non-obvious safeguards:
 - The TTL split comes from `cache_creation.ephemeral_5m/1h_input_tokens`. A line without a usable split is priced as a 5-minute write and counted in `ttl_unspecified_assumed_5m`. `ttl_split_mismatch` counts splits that do not sum to the flat total. A malformed or zone-less timestamp aborts the run. A response with no timestamped line is dropped and counted in `missing_timestamp`.
 - Treat `input_tokens` in Claude's `usage` object as already excluding cache read/write — do not subtract cache categories from it.
 - A turn is a live human or subagent prompt. Records that are purely `tool_result` continue the enclosing turn.
-- Price any record with `service_tier: "priority"` separately, at Anthropic's priority rates.
+
+The `--rate` values are standard-tier rates. A response whose usage carries any `service_tier` other than `standard` (for example `priority`) goes in its own `<model> / <tier>` row and stays unpriced: that row is listed among the unpriced models, so the total is unpriced too and `--strict-pricing` fails, and the response is counted in `unpriced_service_tier_<tier>`. A response with no tier is priced as standard and counted in `service_tier_unspecified_assumed_standard`. Report both counts when non-zero.
 
 **By project:** `--by-project` groups by the top-level directory under `--logs-root` (one per working directory, slugified, e.g. `-home-me-proj`). It prints a project table and a per-project model breakdown, and adds a top-level `"projects"` key to JSON output. Dedup runs once globally first, so a response straddling two project directories counts once, under the first file scanned.

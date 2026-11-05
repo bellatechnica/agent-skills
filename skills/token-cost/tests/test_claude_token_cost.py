@@ -296,5 +296,31 @@ class FinalUsagePerResponse(unittest.TestCase):
             self.assertEqual(diagnostics["chosen_line_output_below_another_line"], 1)
 
 
+class ServiceTier(unittest.TestCase):
+    def test_every_tier_but_standard_is_counted_and_left_unpriced(self):
+        standard = {**usage(100), "service_tier": "standard"}
+        priority = {**usage(200), "service_tier": "priority"}
+        unknown = {**usage(300), "service_tier": "made-up-tier"}
+        events, diagnostics = read([
+            line("msg_a", "text", standard, request_id="req_a"),
+            line("msg_b", "text", priority, request_id="req_b"),
+            line("msg_c", "text", unknown, request_id="req_c"),
+        ])
+        self.assertEqual(diagnostics.get("unpriced_service_tier_priority"), 1)
+        self.assertEqual(diagnostics.get("unpriced_service_tier_made-up-tier"), 1)
+        self.assertNotIn("service_tier_unspecified_assumed_standard", diagnostics)
+        rates = {"claude-test": claude_token_cost.Rate(1, 1.25, 2, 0.1, 5)}
+        result, _, unpriced = claude_token_cost.calculate(events, rates, {}, {})
+        self.assertEqual(unpriced, ["claude-test / made-up-tier", "claude-test / priority"])
+        self.assertIsNone(result["claude-test / priority"]["api_cost"])
+        self.assertEqual(result["claude-test / priority"]["output"], 200)
+        self.assertEqual(result["claude-test / made-up-tier"]["output"], 300)
+        # Only the standard response is priced: 3 input, 500 1h write,
+        # 1000 read and 100 output at the rates above, per million tokens.
+        expected = (3 * 1 + 500 * 2 + 1000 * 0.1 + 100 * 5) / 1_000_000
+        self.assertAlmostEqual(result["claude-test"]["api_cost"], expected)
+        self.assertEqual(result["claude-test"]["output"], 100)
+
+
 if __name__ == "__main__":
     unittest.main()

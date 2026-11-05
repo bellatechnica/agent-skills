@@ -9,7 +9,7 @@ When the recipient also has a native client route, `session-message` decides
 the order between this sender and that route. This skill's rules apply whenever
 this sender is used.
 
-Keystrokes injected into another pane are indistinguishable from its operator
+Keystrokes injected into another pane are indistinguishable from the user
 typing them. Deliver each message through
 [`scripts/tmux_send.py`](scripts/tmux_send.py). A caller permitted to inspect the
 pane may use the documented inspection-authorized fallback after a sender
@@ -174,7 +174,7 @@ ordinary composer. If the caller's own paste raised an input-mode suggestion
 dialog, it may issue one Esc before Enter only after an inspection immediately
 before Esc shows that same suggestion dialog still open, and only when the
 dialog appeared in direct response to that paste, describes an input-mode
-suggestion rather than an operator question, and the intended draft remains in
+suggestion rather than a question for the user, and the intended draft remains in
 the composer after Esc. Stop without another key when the pane, ownership, or
 dialog provenance is uncertain.
 
@@ -239,7 +239,7 @@ already occupied, complete Relay wake notice, described in that skill's
 
 ### `DIALOG`
 
-A real dialog belongs to the operator: send no key, including Esc, and follow
+A real dialog is the user's to answer: send no key, including Esc, and follow
 the schedule above. The fallback's Esc rule covers only an input-mode suggestion
 raised by the caller's own direct paste.
 
@@ -271,7 +271,7 @@ The message may be absent, stranded in the composer, or already submitted.
 Never rerun the ordinary send automatically: it may duplicate a completed
 delivery. Send no Enter, Esc, `C-u`, or other key automatically.
 
-Read-only direct inspection may inform the caller or operator, but a clear
+Read-only direct inspection may inform the caller or the user, but a clear
 composer alone and message text anywhere on screen do not prove delivery.
 Out-of-band evidence such as the recipient's reply may.
 
@@ -290,9 +290,8 @@ If the composer does not clear after that Enter, send nothing further. Report
 the completion separately; do not relabel the earlier result as `SENT`.
 
 Retain the exact message file or reproducible stdin source. Escalate to the
-operator of the calling session; for a handoff, also notify the counterpart
-through Agent Relay. Report the target, UTC time, retained source, result stage,
-stderr diagnostic, and relevant inspection findings.
+user, reporting the target, UTC time, retained source, result stage, stderr
+diagnostic, and relevant inspection findings.
 
 If the message was only a Relay wake, report that Relay accepted the durable
 payload but active wake-up is unverified. Do not resend the Relay payload.

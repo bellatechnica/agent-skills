@@ -7,7 +7,7 @@ Initialize the current directory as a new repository. Adapt every step to the pr
 
 ## 1. Inspect, then ask once
 
-Look at existing files first to infer languages and tooling. Then ask everything that remains in a single AskUserQuestion round (recommended default listed first per question):
+Look at existing files first to infer languages and tooling. Then ask everything that remains in a single question round (Claude Code's AskUserQuestion where available), listing the recommended default first in each question:
 
 - **Languages/toolchains**, if not inferable from existing files or the user's invocation.
 - **Environment details** where relevant — e.g. for Python: conda env name (default: directory name, lowercase) and Python version.
@@ -86,7 +86,6 @@ Python with conda (the default for Python projects here — `layout anaconda` is
 ```bash
 layout anaconda <env-name>
 export PYTHONNOUSERSITE=1
-PATH_add "$CONDA_PREFIX/bin"
 ```
 
 If the conda env doesn't exist yet, create it first: `conda create -n <env-name> python=<version> -y`.
