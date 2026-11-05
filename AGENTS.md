@@ -10,6 +10,14 @@ These rules bind anyone, human or agent, who writes or edits a skill under
   it supports. Evidence a maintainer needs goes in `docs/`, which no skill
   tells an agent to read. Only shared skills get committed docs: a private
   skill's evidence goes in `docs/do_not_commit/`, which stays untracked.
+- **State the goal, not the approach.** Where how to reach a goal is a
+  judgment call, say what done looks like and what must not happen, and
+  leave the method to the agent, so the skill adapts to tasks it was not
+  written for and to models of different strength. Conventions every session
+  shares — the channel, the tools, protocols, formats, locations, commands —
+  are not approach: fix them, so the same job is done the same way
+  everywhere. Keep a rule a trap earned, condensed to the rule; drop the
+  incident it came from.
 - **Split what only one case needs.** When instructions for one harness,
   client or launch type grow long, move them to a file in the skill's own
   directory that the skill tells only that case to read, as `new-session`

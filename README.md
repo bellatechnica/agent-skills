@@ -6,12 +6,20 @@ want it done. Some skills are checklists, some are workflows, and some ship a
 script that does the job. They are written for my own setup, but none depends
 on it.
 
-The skills are modular: each does one job and names the skills it builds on,
-so you can take the base skills without the workflows built on them. If
-`implement`'s flow is too specific for you, `session-message` still gives your
-own sessions a reliable channel, and `new-session` still launches them; if
-you only want to type into another agent's pane safely, `tmux-message` works
-alone.
+Two principles run through them:
+
+- **Modular.** Each skill does one job and names the skills it builds on, so
+  you can take the base skills without the workflows built on them. If
+  `implement`'s flow is too specific for you, `session-message` still gives
+  your own sessions a reliable channel, and `new-session` still launches them;
+  if you only want to type into another agent's pane safely, `tmux-message`
+  works alone.
+- **Goal, not approach.** Where how to do a job is a judgment call, a skill
+  says what done looks like and what must not happen, and leaves the method
+  to the agent, so it adapts to tasks it was not written for and to models of
+  different strength. Conventions every session shares — the channel, the
+  tools, protocols, formats, file locations, commands — stay fixed, so the same job is
+  done the same way everywhere.
 
 ## How the session skills fit together
 
